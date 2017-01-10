@@ -54,7 +54,7 @@ var upPressed = false;
 var downPressed = false;
 
 //Shape size
-var maxsize = 500;
+var maxsize = 200;
 var minsize = 200;
     
     
@@ -181,8 +181,8 @@ function getDistance(x1,y1,x2,y2){
         )
         {
             console.log("Collision!");
-            var time= new Date().getMilliseconds();
-            growShrink4(ctx, time, player.size+shape.size/2, shape, player, shape.size, player.size);
+            var initialTime= new Date().getMilliseconds();
+            growShrink4(ctx, player.size+shape.size/2, shape, player, initialTime);
         }
     }
  }   
@@ -322,7 +322,8 @@ Shape.prototype.growShrink3 = function(ctx, intialTime, limit, initialSize) {
     ctx.restore();
 }
 
-function growShrink4(ctx, intialTime, limit, shape, player, initialShape, initialPlayer) {
+function growShrink4(ctx, limit, shape, player, initialTime) {
+    console.log("start");
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     console.log(shape.size);
@@ -332,13 +333,19 @@ function growShrink4(ctx, intialTime, limit, shape, player, initialShape, initia
         console.log(shape.size);
         console.log(player.size);
         var current=new Date().getMilliseconds();
-        var time=current-intialTime;
+        var time=Math.abs(current-initialTime);
          //var slowTime=time/2;
+         console.log("time");
+         console.log(current);
+         console.log(initialTime);
+         console.log(time);
+         
+         
          if (shape.size > 0) {
-            shape.size=initialShape-time;
+            shape.size-=time;
         }
         if (player.size<limit) {
-            player.size=initialPlayer+time;
+            player.size-=time;
         }
         if (shape.size <= 0) {
             console.log("zero");
