@@ -182,7 +182,7 @@ function getDistance(x1,y1,x2,y2){
         {
             var initialTime= new Date().getTime();
             console.log("Collision!");
-            growShrink4(ctx, player.size+shape.size/2, shape, player, initialTime);
+            growShrink4(ctx, player.size+shape.size/2, shape, player, initialTime, shape.size, player.size);
         }
     }
  }   
@@ -322,7 +322,7 @@ Shape.prototype.growShrink3 = function(ctx, intialTime, limit, initialSize) {
     ctx.restore();
 }
 
-function growShrink4(ctx, limit, shape, player, initialTime) {
+function growShrink4(ctx, limit, shape, player, initialTime, initialShape, initialPlayer) {
     //console.log("start");
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -333,17 +333,17 @@ function growShrink4(ctx, limit, shape, player, initialTime) {
         console.log(shape.size);
         console.log(player.size);
         var current=new Date().getTime();
-        var time=Math.abs(current-initialTime);
+        var time=Math.abs(current-initialTime+1);
          var slowTime=time/15;
          console.log("time");
-         console.log(current);
          console.log(initialTime);
+         console.log(current);
          console.log(time);
          console.log(slowTime);
          
          
          if (shape.size > 0) {
-            shape.size-=slowTime;
+            shape.size=initialShape-slowTime;
         }
         if (player.size<limit) {
 //            console.log("why neg");
@@ -352,7 +352,7 @@ function growShrink4(ctx, limit, shape, player, initialTime) {
 //            console.log();
 //            console.log();
             
-            player.size+=slowTime;
+            player.size=initialPlayer+slowTime;
         }
         if (shape.size <= 0) {
             //console.log("zero");
