@@ -42,8 +42,8 @@ var player_size = 20;
 var player_x = canvas.width/2;
 var player_y = canvas.height-30;
 var ratio=16/9;
-var maxNumShapes=3
-var minNumShapes=3
+var maxNumShapes=10
+var minNumShapes=10
 var numShapes = getRandomIntInclusive(minNumShapes,maxNumShapes);
 
 
@@ -54,8 +54,8 @@ var upPressed = false;
 var downPressed = false;
 
 //Shape size
-var maxsize = 200;
-var minsize = 200;
+var maxsize = 100;
+var minsize = 100;
     
     
 var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));
@@ -180,8 +180,8 @@ function getDistance(x1,y1,x2,y2){
         <=(player.size+shape.size)/2
         )
         {
+            var initialTime= new Date().getTime();
             console.log("Collision!");
-            var initialTime= new Date().getMilliseconds();
             growShrink4(ctx, player.size+shape.size/2, shape, player, initialTime);
         }
     }
@@ -323,40 +323,48 @@ Shape.prototype.growShrink3 = function(ctx, intialTime, limit, initialSize) {
 }
 
 function growShrink4(ctx, limit, shape, player, initialTime) {
-    console.log("start");
+    //console.log("start");
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    console.log(shape.size);
-    console.log(player.size);
+//    console.log(shape.size);
+//    console.log(player.size);
      while (player.size<limit || shape.size != 0) {
         console.log("loop");
         console.log(shape.size);
         console.log(player.size);
-        var current=new Date().getMilliseconds();
+        var current=new Date().getTime();
         var time=Math.abs(current-initialTime);
-         //var slowTime=time/2;
+         var slowTime=time/15;
          console.log("time");
          console.log(current);
          console.log(initialTime);
          console.log(time);
+         console.log(slowTime);
          
          
          if (shape.size > 0) {
-            shape.size-=time;
+            shape.size-=slowTime;
         }
         if (player.size<limit) {
-            player.size-=time;
+//            console.log("why neg");
+//            console.log(time);
+//            console.log();
+//            console.log();
+//            console.log();
+            
+            player.size+=slowTime;
         }
         if (shape.size <= 0) {
-            console.log("zero");
+            //console.log("zero");
             shape.size=0;
             shapes.splice(i,1);
         }
+        console.log("draw");
         draw();
         player.draw(ctx);
     }
     ctx.restore();
-    console.log("end");
+    //console.log("end");
     return;
 }
     
