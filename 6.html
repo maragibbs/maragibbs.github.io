@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Run Eat Run Test</title>
+    <style>
+        html,body {
+            margin: 0;
+            padding: 0;
+            border: 0;
+            overflow: hidden;
+        }
+        
+        canvas {
+            position: absolute;
+            top:0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            margin:auto;
+        }
+            
+    </style>
+</head>
+<body>
+
+<canvas id="myCanvas" width="1000" height="750" ></canvas>
+    
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.4.4/randomColor.js"></script>
+<script>
+"use strict";
+var mousex;
+var mousey;
+var canvas = document.getElementById("myCanvas");
+canvas.style.background = 'black';
+canvas.addEventListener('mousemove', function(event){
+    mousex = event.clientX-canvas.getBoundingClientRect().left;
+    mousey = event.clientY-canvas.getBoundingClientRect().top;
+  });
+var ctx = canvas.getContext("2d");
+
+//audioctx
+var AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioCtx = new AudioContext();
+
+//ctx.canvas.width  = window.innerWidth;
+//ctx.canvas.height = window.innerHeight;
+var player_size = 20;
+var player_x = canvas.width/2;
+var player_y = canvas.height/2;
+var ratio=16/9;
+var maxNumShapes=15;
+var minNumShapes=5;
+var numShapes = getRandomIntInclusive(minNumShapes,maxNumShapes);
+
+//var d = Math.sqrt( (canvas.width/2)*(canvas.width/2) + (3*canvas.height/4)*(3*canvas.height/4));
+
+//arrow keys
+var rightPressed = false;
+var leftPressed = false;
+var upPressed = false;
+var downPressed = false;
+
+//Shape size
+var maxsize = 60;
+var minsize = 20;
+var maxfreq=300;
+var minfreq=2000;
+var maxspeed = 3;
+var minspeed = -3;
+var spinSpeed = 250;
+
+//Shape object
+var Shape = function(x,y,size,color,type,speedx,speedy,isPlayer){
+    console.log("Shape created");
+    this.x = x;
+    this.y = y;
+    this.size = size;
+    this.color = color;
+    this.type = type;
+    this.isPlayer=isPlayer;
+    this.speedx=speedx;
+    this.speedy=speedy;
+
+    this.radarSize=1;
+    this.gainNode = audioCtx.createGain();
+    this.gainNode.connect(audioCtx.destination);
+    this.gainNode.gain.value = 1;
+
+    if(this.isPlayer==false){
+        this.source= audioCtx.createOscillator();
+        this.source.type = 'sine';
+        this.source.frequency.value = (maxfreq-minfreq)*(this.size-minsize)/(maxsize-minsize)+minfreq ; // value in hertz
+
+        this.panner = audioCtx.createPanner();
+        this.source.connect(this.panner);
+        this.panner.connect(this.gainNode);
+
+        this.gainNode.gain.value = 0;
+        this.source.start();
+
+        this.panner.panningModel = 'HRTF';
+        this.panner.distanceModel = 'inverse';
+        this.panner.refDistance = 5;
+        this.panner.maxDistance = 10000;
+        this.panner.rolloffFactor = 1;
+        this.panner.coneInnerAngle = 360;
+        this.panner.coneOuterAngle = 0;
+        this.panner.coneOuterGain = 0;
+
+    if(this.panner.orientationX) {
+          this.panner.orientationX.value = 1;
+          this.panner.orientationY.value = 0;
+          this.panner.orientationZ.value = 0;
+    } else {
+      this.panner.setOrientation(1,0,0);
+    }
+
+        this.panner.positionX.value = this.x;
+        this.panner.positionY.value = this.y;
+        this.panner.positionZ.value = 50;
+
+    }
+    else if(this.isPlayer==true){
+    this.listener = audioCtx.listener;
+
+    if(this.listener.forwardX) {
+      this.listener.forwardX.value = 0;
+      this.listener.forwardY.value = 0;
+      this.listener.forwardZ.value = -1;
+      this.listener.upX.value = 0;
+      this.listener.upY.value = 1;
+      this.listener.upZ.value = 0;
+    } else {
+      this.listener.setOrientation(0,0,-1,0,1,0);
+    }
+        this.listener.positionX.value = this.getCenter().x;
+      this.listener.positionY.value = this.getCenter().y;
+      this.listener.positionZ.value = 50;
+
+    }
+};
+
+
+
+//Method for shape to draw itself
+Shape.prototype.draw = function(ctx) {
+    //ctx.beginPath();
+    ctx.fillStyle = this.color;
+    if(this.type == "square"){
+    ctx.fillRect (this.x, this.y, this.size, this.size);
+    }
+    if(this.type == "circle"){
+        ctx.beginPath();
+        ctx.arc(this.getCenter().x,this.getCenter().y,size/2, 0, 2 * Math.PI, false);
+        ctx.fill();
+    }
+
+    //ctx.closePath();
+    //console.log("Square number " + this.id + " has been created at: "+this.x+","+ this.y);
+};
+
+Shape.prototype.updateAudioLocation = function() {
+
+    //update audiolocation
+    if(this.isPlayer==false){
+    // this.panner.positionX.value = this.x;
+    // this.panner.positionY.value = this.y;
+     this.panner.setPosition(this.x,this.y,50);
+    //console.log(this.panner.positionX.value,this.panner.positionY.value);
+} else if(this.isPlayer){
+    // this.listener.positionX.value = this.x;
+    // this.listener.positionY.value = this.y;
+     this.listener.setPosition(this.getCenter().x,this.getCenter().y,50);
+    //console.log(this.listener.positionX.value,this.listener.positionY.value);
+}
+};
+
+
+Shape.prototype.drawSpin = function(ctx) {
+    //ctx.save();
+    var time = new Date();
+    ctx.fillStyle = this.color;
+    ctx.translate((this.x + this.size/2),(this.y + this.size/2));
+    ctx.rotate( ((Math.PI)/spinSpeed)*time.getMilliseconds());
+    ctx.fillRect (-this.size/2, -this.size/2, this.size, this.size);
+    //ctx.restore();
+};
+
+// Shape.prototype.getTopLeftCorner = function(){
+//     var point = {x: this.x, y: this.y};
+//     return point;
+// };
+
+// Shape.prototype.getTopRightCorner = function(){
+//     var point = {x: this.x+this.size, y: this.y};
+//     return point;
+// };
+
+// Shape.prototype.getBottomLeftCorner = function(){
+//     var point = {x: this.x, y: this.y+this.size};
+//     return point;
+// };
+
+// Shape.prototype.getBottomRightCorner = function(){
+//     var point = {x: this.x+this.size, y: this.y+this.size};
+//     return point;
+// };
+
+Shape.prototype.getCenter = function(){
+    return {x: this.x+(this.size/2), y: this.y+(this.size/2)};
+};
+    
+Shape.prototype.changeSize = function(ratio) {
+    this.size*=ratio;
+};
+    
+    
+//function color() {
+//    do {
+//        var c = randomColor();
+//    }
+//    while (c=="#000000");
+//    console.log("c");
+//    console.log(c);
+//}
+
+    
+//Array for storing shapes
+var shapes = [];
+for(var i=0; i<numShapes; i++){
+    var size = generateSize();
+    shapes.push(new Shape(generateX(size),generateY(size),size,randomColor(),"square",getRandomIntInclusive(minspeed,maxspeed),getRandomIntInclusive(minspeed,maxspeed),false));
+    //console.log("shape");
+    //console.log(shapes[i].color);
+}
+
+//Player shape
+var player = new Shape(player_x,player_y,player_size,randomColor(),"square");
+
+document.addEventListener("keydown", keyDownHandler, false);
+document.addEventListener("keyup", keyUpHandler, false);
+
+function keyDownHandler(e) {
+    if(e.keyCode == 39) {
+        rightPressed = true;
+    }
+    else if(e.keyCode == 37) {
+        leftPressed = true;
+    }
+     if(e.keyCode == 40) {
+        upPressed = true;
+    }
+    else if(e.keyCode == 38) {
+        downPressed = true;
+    }
+}
+
+function keyUpHandler(e) {
+    if(e.keyCode == 39) {
+        rightPressed = false;
+    }
+    else if(e.keyCode == 37) {
+        leftPressed = false;
+    }
+
+     if(e.keyCode == 40) {
+        upPressed = false;
+    }
+    else if(e.keyCode == 38) {
+        downPressed = false;
+    }
+}
+
+function resize_canvas(){
+    var oldCanvasWidth = canvas.width;
+    var oldCanvasHeight = canvas.height;
+    if (canvas.width  != window.innerWidth || canvas.height != window.innerHeight) {
+        if (window.innerWidth>window.innerHeight*ratio) {
+            canvas.height=window.innerHeight;
+            canvas.width=canvas.height*ratio;
+            var changeInWidthRatio=canvas.width/oldCanvasWidth;
+            var changeInHeightRatio=canvas.height/oldCanvasHeight;
+                shapes.forEach(function(shape){
+                    shape.x*=changeInWidthRatio;
+                    shape.y*=changeInHeightRatio;
+                    shape.changeSize(changeInHeightRatio);
+                });
+                player.changeSize(changeInHeightRatio);
+        } else {
+            canvas.width=window.innerWidth;
+            canvas.height=canvas.width/ratio;
+            var changeInWidthRatio=canvas.width/oldCanvasWidth;
+            var changeInHeightRatio=canvas.height/oldCanvasHeight;
+                shapes.forEach(function(shape){
+                    shape.x*=changeInWidthRatio;
+                    shape.y*=changeInHeightRatio;
+                    shape.changeSize(changeInWidthRatio);
+                    shape.size*=changeInWidthRatio;
+                });
+
+                player.changeSize(changeInWidthRatio);
+        }
+        
+    }
+
+}
+
+function getDistance(x1,y1,x2,y2){
+    return Math.sqrt(Math.pow(x1-x2,2)+Math.pow(y1-y2,2));
+}
+    
+ function checkCollisions(currentTime){
+    for(var i=0; i<shapes.length; i++){
+        var shape=shapes[i];
+        var half=(shape.size)/2;
+        if((getDistance(player.x,player.y,shape.getCenter().x,shape.getCenter().y)<=half
+        || getDistance(player.x+player.size,player.y,shape.getCenter().x,shape.getCenter().y)<=half
+        || getDistance(player.x,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=half
+        || getDistance(player.x+player.size,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=half
+        || getDistance(player.getCenter().x,player.getCenter().y,shape.getCenter().x,shape.getCenter().y)
+        <=(player.size+shape.size)/2) && shape.inCollision==undefined
+        )
+        {
+            player.StartAnimation(currentTime, 500, player.size + shape.size,1);
+            shape.speedx=0;
+            shape.speedy=0;
+            shape.inCollision = true;
+            shape.StartAnimation(currentTime, 500, 0,0);
+        }
+        //audio on/off for radar
+        if(getDistance(player.x,player.y,shape.getCenter().x,shape.getCenter().y)<=player.radarSize
+        || getDistance(player.x+player.size,player.y,shape.getCenter().x,shape.getCenter().y)<=player.radarSize
+        || getDistance(player.x,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=player.radarSize
+        || getDistance(player.x+player.size,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=player.radarSize
+        || getDistance(player.getCenter().x,player.getCenter().y,shape.getCenter().x,shape.getCenter().y)
+        <=player.radarSize+shape.size
+        )
+        {
+        shape.gainNode.gain.value = 1;
+        }
+    else {
+        shape.gainNode.gain.value = 0;
+        }
+    }
+ }
+
+Shape.prototype.drawRadar= function(ctx){
+
+var centerX=this.x+this.size/2;
+var centerY= this.y+this.size/2;
+var now= new Date();
+var sec=now.getSeconds();
+
+var radarRatio=(sec%5)/10;
+
+this.radarSize=this.size*(1+radarRatio);
+ctx.arc(centerX,centerY,this.radarSize,0,Math.PI*2,true);
+ctx.strokeStyle=this.color;
+ctx.stroke();
+}
+    
+// function eatShape(index,shape){
+//     shapes.splice(index,1);
+//     player.size+=(shape.size/2);
+// }
+    
+//Method to generate random X coordinate for a shape
+function generateX(size){
+return Math.random() * (canvas.width-size);
+}
+
+//Method to generate random Y coordinate for a shape
+function generateY(size){
+return Math.random() * (canvas.height-size);
+}
+
+//Method to generate random size for a shape
+function generateSize(){
+return Math.random() * (maxsize - minsize) + minsize;
+}
+
+// function drawBall() {
+//     console.log(x,y);
+//     console.log(mousex,mousey);
+//     ctx.beginPath();
+//     ctx.arc(x, y, size, 0, Math.PI*2);
+
+//     ctx.fillStyle = "#0095DD";
+//     ctx.fill();
+
+//     //ctx.strokeRect(x,y,50,50);
+//     ctx.closePath();
+// }
+    
+// function drawSquare() {
+//     console.log(x,y);
+//     console.log(mousex,mousey);
+//     ctx.beginPath();
+//     ctx.fillRect (x, y, size, size);
+//     ctx.fillStyle = "#0095DD";
+//     ctx.fill();
+//     ctx.closePath();
+    
+// }
+    
+//function speed() {
+    //var dist = Math.sqrt(pow(mousex-x,2)+pow(mousey-y,2));
+    //return dist
+//}
+
+function moveShape(shape){
+    var time = (new Date()).getTime() - startTime;
+    var newX = shape.x+(shape.speedx); // * time / 1000);
+    var newY = shape.y+(shape.speedy); //* time / 1000);
+    if(shape.speedx>0 && newX<(canvas.width - shape.size)){
+        shape.x = newX;
+    }
+    else if (shape.speedx>0){
+        shape.speedx*=-1;
+        shape.x-=1;
+    }
+    if(shape.speedx<0 && newX>0){
+        shape.x = newX;
+    }
+    else if (shape.speedx<0){
+        shape.speedx*=-1;
+        shape.x+=1;
+    }
+    if(shape.speedy<0 && newY>0){
+        shape.y = newY;
+    }
+    else if (shape.speedy<0){
+        shape.speedy*=-1;
+        shape.y+=1;
+    }
+    if(shape.speedy>0 && newY<(canvas.height - shape.size)){
+        shape.y = newY;
+    }
+    else if (shape.speedy>0){
+        shape.speedy*=-1;
+        shape.y-=1;
+    }
+}
+
+Shape.prototype.IsAnimating = function() {
+    return this.AnimationStartTime != undefined;
+};
+
+Shape.prototype.StartAnimation = function(time, period, newSize,newGain) {
+    this.AnimationStartTime = time;
+    this.AnimationStartSize = this.size;
+    this.AnimationStopSize = newSize;
+
+    this.AnimationStartGain=this.gainNode.gain.value;
+    this.AnimationStopGain=newGain;
+    this.AnimationPeriod = period;
+
+
+};
+
+Shape.prototype.DoAnimation = function(time) {
+    if (this.IsAnimating())
+    {
+        var deltaTime = time - this.AnimationStartTime;
+
+        if (deltaTime >= this.AnimationPeriod)
+            this.StopAnimation();
+        else
+        {
+            var sizeDelta = this.AnimationStopSize - this.AnimationStartSize;
+
+            var gainDelta= this.AnimationStopGain-this.AnimationStartGain;
+
+            this.size = this.AnimationStartSize + sizeDelta *(deltaTime)/this.AnimationPeriod;
+
+            this.gainNode.gain.value=this.AnimationStartGain + gainDelta *(deltaTime)/this.AnimationPeriod;
+        }
+    }
+};
+
+
+Shape.prototype.StopAnimation = function() {
+    this.size = this.AnimationStopSize;
+    if(this.AnimationStopSize===0)
+    {
+        this.gainNode.gain.value = 0;
+        this.source.stop();
+
+    }
+
+
+    this.AnimationStartTime = undefined;
+    this.AnimationStartSize = undefined;
+    this.AnimationStopSize = undefined;
+    this.AnimationPeriod = undefined;
+};
+
+function update() {
+    resize_canvas();
+    var currentTime = (new Date()).getTime();
+    shapes.forEach(function(shape){
+        moveShape(shape,startTime);
+    });
+    // for(var i=0; i<shapes.length; i++){
+    //     shapes[i].draw();
+    // }  
+    checkCollisions(currentTime);
+    player.DoAnimation(currentTime);
+    for(var i=0; i<shapes.length; i++){
+        var shape = shapes[i];
+        shape.DoAnimation(currentTime);
+        if(shape.size==0){
+            shapes.splice(i,1);
+        }
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle="#000000"
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath();
+    ctx.arc(player.getCenter().x, player.getCenter().y, player.radarSize, 0, Math.PI*2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    shapes.forEach(function(shape){
+            shape.draw(ctx);
+            shape.updateAudioLocation();
+    });
+    player.draw(ctx);
+    player.updateAudioLocation();
+    player.drawRadar(ctx);
+
+
+    //var prev_x = player.x;
+    //var prev_y = player.y;
+    //var size = player.size;
+
+    var dist = Math.sqrt(Math.pow(mousex-player.x,2)+Math.pow(mousey-player.y,2));
+
+    var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));
+    
+    var speedFactor=10*((maxDist-dist)/maxDist+1);
+    
+
+    if(mousex>0 && mousex<canvas.width &&mousey>0 &&mousey<canvas.height){
+    player.x=(mousex-player.x)/speedFactor+player.x;
+    player.y=(mousey-player.y)/speedFactor+player.y;
+    }
+
+    var speed = dist/50;
+
+    //arrowkeys
+    if(rightPressed && x < canvas.width-(size*2)) {
+        player.x += speed;
+    }
+    else if(leftPressed && x > 0) {
+        player.x -= speed;
+    }
+
+    if(upPressed && y < canvas.height-(size*2)) {
+        player.y += speed;
+    }
+    else if(downPressed && y > 0) {
+        player.y -= speed;
+    }
+
+    //mouse
+
+    // if(mousex>x+(size-1) && x < canvas.width-(size*2)) {
+    // 	 x += speed;
+    // }
+    // else if(mousex<x+10  && x > 0)
+    // {
+    // 	x -= speed;
+    // }
+
+    // if(mousey>y+(size-3) && y < canvas.height-(size*2)) {
+    //     y += speed;
+    // }
+    // else if(mousey<y+9 && y > 0) {
+    //     y -= speed;
+    // }
+
+
+    // if(mousex>x+size && x < canvas.width-(size*2)) {
+    //   x += speed;
+    // }
+    // else if(mousex<x-size  && x > 0)
+    // {
+    //  x -= speed;
+    // }
+
+    // if(mousey>y+size && y < canvas.height-(size*2)) {
+    //     y += speed;
+    // }
+    // else if(mousey<y -size&& y > 0) {
+    //     y -= speed;
+    // }
+    //ctx.clearRect(prev_x,prev_y,size,size);
+    window.requestAnimationFrame(update);
+}
+    
+function getRandomIntInclusive(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+var startTime = (new Date()).getTime();
+window.requestAnimationFrame(update);   
+    
+</script>
+
+</body>
+</html>
