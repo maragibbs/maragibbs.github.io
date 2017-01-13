@@ -18,34 +18,69 @@
             right: 0;
             margin:auto;
         }
-            
+        #hud  { position: absolute; top:; background-color: yellow; opacity: 0.8; border: 4px solid black; }
     </style>
+
+<audio controls autoplay>
+  <source src="runeatrundraft1.mp3"> 
+  Your browser does not support the audio element.
+</audio>
+
 </head>
 <body>
 
-<canvas id="myCanvas" width="1000" height="750" ></canvas>
+    <canvas id="myCanvas" width="1000" height="750" ></canvas>
     
+    <div id="hud">
+    <table>
+        <tr><td>Score:</span></td><td id = 'score'>0</td><td><input type="button" value="Play Again" onClick="window.location.reload()"></input></td></tr>
+    </table>
+    </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.4.4/randomColor.js"></script>
-<script>
-"use strict";
-var mousex;
-var mousey;
-var canvas = document.getElementById("myCanvas");
-canvas.style.background = 'black';
-canvas.addEventListener('mousemove', function(event){
-    mousex = event.clientX-canvas.getBoundingClientRect().left;
-    mousey = event.clientY-canvas.getBoundingClientRect().top;
-  });
-var ctx = canvas.getContext("2d");
-var player_size = 20;
-var player_x = canvas.width/2;
-var player_y = canvas.height-30;
-var ratio=16/9;
-var maxNumShapes=10
-var minNumShapes=10
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.4.4/randomColor.js"></script>
+    <script>
+        "use strict";
+        var mousex;
+        var mousey;
+        var canvas = document.getElementById("myCanvas");
+        canvas.style.background = 'black';
+        canvas.addEventListener('mousemove', function(event){
+            mousex = event.clientX-canvas.getBoundingClientRect().left;
+            mousey = event.clientY-canvas.getBoundingClientRect().top;
+        });
+        var ctx = canvas.getContext("2d");
+
+//audioctx
+var AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioCtx = new AudioContext();
+
+var initradarsize=100;
+var ratio=16/9; //aspect ratio for canvas size
+var player_size = 30;
+var robot_size = player_size; //fair game
+var robot_speed = 2.5;//main speed magnitude
+
+//sum of players and robots should be 4!
+var player_count = 1;
+var robot_count = 3;
+var main_color_container = []; //colors for assigning to players and robots
+main_color_container.push("blue");
+main_color_container.push("red");
+main_color_container.push("yellow");
+main_color_container.push("green");
+var main_position_container = [];
+main_position_container.push({x:0,y:0});
+main_position_container.push({x:(canvas.width)-robot_size,y:canvas.height-robot_size});
+main_position_container.push({x:0,y:canvas.height-robot_size});
+main_position_container.push({x:canvas.width-robot_size,y:0});
+
+var maxNumShapes=20;
+var minNumShapes=10;
 var numShapes = getRandomIntInclusive(minNumShapes,maxNumShapes);
 
+var player = undefined;
+var robots = [];
+var shapes = [];
 
 //arrow keys
 var rightPressed = false;
@@ -53,48 +88,556 @@ var leftPressed = false;
 var upPressed = false;
 var downPressed = false;
 
-//Shape size
-var maxsize = 100;
-var minsize = 100;
-    
-    
-var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));
+//Shape sizes
+var maxsize = 25;
+var minsize = 15;
+var maxfreq=300;
+var minfreq=2000;
+var maxspeed = 0;
+var minspeed = 0;
+var spinSpeed = 250;
+//var backgroundMusic=createAudio("runeatrundraft1.mp3");
+
+function createAudio(src, options) {
+  var audio = document.createElement('audio');
+  audio.volume = options.volume || 0.5;
+  audio.loop   = options.loop;
+  audio.src    = src;
+  return audio;
+}
+
+function updateScore(integer){
+    document.getElementById("score").innerHTML = integer;
+}
+        
+var Point = function (x,y) {
+    this.x=x;
+    this.y=y;
+};
 
 //Shape object
-var Shape = function(x,y,size,color){
-    //console.log("Shape created");
+var Shape = function(x,y,size,color,type,speedx,speedy,isPlayer){
+    console.log("Shape created");
     this.x = x;
     this.y = y;
     this.size = size;
     this.color = color;
+    this.type = type;
+    this.isPlayer=isPlayer;
+    this.speedx=speedx;
+    this.speedy=speedy;
+    this.shapesEaten = 0;
+    
+     this.points = []; 
+    
+    var minSides=2;
+    var maxSides=6;        
+        
+        this.sides= getRandomIntInclusive(minSides,maxSides);
+        if (this.sides==2) {
+            this.sides=0;
+        }
+
+
+    this.radarSize=1;
+    this.gainNode = audioCtx.createGain();
+    this.gainNode.connect(audioCtx.destination);
+    this.gainNode.gain.value = 1;
+
+    if(this.isPlayer==false){
+        this.source= audioCtx.createOscillator();
+        this.source.type = 'sine';
+        this.source.frequency.value = (maxfreq-minfreq)*(this.size-minsize)/(maxsize-minsize)+minfreq ; // value in hertz
+
+        this.panner = audioCtx.createPanner();
+        this.source.connect(this.panner);
+        this.panner.connect(this.gainNode);
+
+        this.gainNode.gain.value = 0;
+        this.source.start();
+
+        this.panner.panningModel = 'HRTF';
+        this.panner.distanceModel = 'inverse';
+        this.panner.refDistance = 5;
+        this.panner.maxDistance = 10000;
+        this.panner.rolloffFactor = 1;
+        this.panner.coneInnerAngle = 360;
+        this.panner.coneOuterAngle = 0;
+        this.panner.coneOuterGain = 0;
+
+        if(this.panner.orientationX) {
+          this.panner.orientationX.value = 1;
+          this.panner.orientationY.value = 0;
+          this.panner.orientationZ.value = 0;
+      } else {
+          this.panner.setOrientation(1,0,0);
+      }
+
+      this.panner.positionX.value = this.x;
+      this.panner.positionY.value = this.y;
+      this.panner.positionZ.value = 50;
+
+  }
+  else if(this.isPlayer==true){
+    this.listener = audioCtx.listener;
+
+    if(this.listener.forwardX) {
+      this.listener.forwardX.value = 0;
+      this.listener.forwardY.value = 0;
+      this.listener.forwardZ.value = -1;
+      this.listener.upX.value = 0;
+      this.listener.upY.value = 1;
+      // this.listener.upZ.value = 0;
+  } else {
+      this.listener.setOrientation(0,0,-1,0,1,0);
+  }
+  this.listener.positionX.value = this.getCenter().x;
+  this.listener.positionY.value = this.getCenter().y;
+  this.listener.positionZ.value = 50;
+
+}
 };
+
+function drawCircle(ctx,x,y,r,color) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2*Math.PI)
+    ctx.fillStyle=color;
+    ctx.fill();
+    ctx.closePath();
+}
+        
+        
+Shape.prototype.regShape= function(ctx) {
+    this.points=[];
+    
+//    ctx.strokeStyle = "white";
+//    ctx.lineWidth = 3;
+    
+    
+    if (this.sides==0) {
+        drawCircle(ctx,this.x,this.y,this.size,this.color);
+    } else {
+        if (this.sides==3) {
+            var offset=Math.PI/6
+        } else if (this.sides==4) {
+             var offset=Math.PI/4
+        } else if (this.sides==5) {
+             var offset=3*Math.PI/2
+        } else if (this.sides==6) {
+             var offset=Math.PI
+        }
+
+        //    x = cx + r * cos(a)
+        //    y = cy + r * sin(a)
+    
+    //var circumfrence=2*Math.PI*this.size
+         
+        var deltaAngle = 2*Math.PI/this.sides;
+
+        var currentAngle=offset;
+        do {  
+            var newPointX=(this.x) + (this.size*Math.cos(currentAngle));
+            var newPointY=(this.y) + (this.size*Math.sin(currentAngle));
+
+            currentAngle+=deltaAngle;
+
+            var newPoint=new Point(newPointX,newPointY);
+            this.points.push(newPoint);
+       }
+        while (currentAngle<=2*Math.PI+offset);
+
+
+        var i=0;
+        //ctx.moveTo(this.x,this.y);
+        ctx.beginPath();
+       
+        while(i<this.points.length){
+            ctx.lineTo(this.points[i].x,this.points[i].y);
+            i++;
+        }
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        
+    }
+      if(this.type == "player" || this.type == "robot"){
+        ctx.fillStyle = "white";
+          ctx.stroke();
+//        ctx.font = "bold "+this.size/2+"px arial";
+//        var width = ctx.measureText(this.shapesEaten).width;
+//        var height = ctx.measureText(this.shapesEaten).height;
+//        ctx.fillText(this.shapesEaten, this.getCenter().x-(width/2), this.getCenter().y+(this.size/5));
+    }
+};  
+
+
 
 //Method for shape to draw itself
 Shape.prototype.draw = function(ctx) {
+    //ctx.beginPath();
     ctx.fillStyle = this.color;
-    ctx.fillRect (this.x, this.y, this.size, this.size);
+    ctx.strokeStyle = "white";;
+    ctx.lineWidth = 3;
+    if(this.type == "square"){
+        ctx.fillRect (this.x, this.y, this.size, this.size);
+    }
+    if(this.type == "circle"){
+        ctx.beginPath();
+        ctx.arc(this.getCenter().x,this.getCenter().y,this.size/2, 0, 2 * Math.PI, false);
+        ctx.fill();
+    }
+    if(this.type == "player" || this.type == "robot"){
+        ctx.beginPath();
+        ctx.rect(this.x, this.y, this.size, this.size);
+        ctx.fill();
+        ctx.stroke();
+        ctx.closePath();
+        ctx.beginPath();
+        ctx.fillStyle = "white";
+        ctx.font = "bold "+this.size/2+"px arial";
+        var width = ctx.measureText(this.shapesEaten).width;
+        var height = ctx.measureText(this.shapesEaten).height;
+        ctx.fillText(this.shapesEaten, this.getCenter().x-(width/2), this.getCenter().y+(this.size/5));
+    }
+    //ctx.closePath();
+    //console.log("Square number " + this.id + " has been created at: "+this.x+","+ this.y);
 };
 
+Shape.prototype.drawSpin = function(ctx) {
+    //ctx.save();
+    var time = new Date();
+    ctx.fillStyle = this.color;
+    ctx.translate((this.x + this.size/2),(this.y + this.size/2));
+    ctx.rotate( ((Math.PI)/spinSpeed)*time.getMilliseconds());
+    ctx.fillRect (-this.size/2, -this.size/2, this.size, this.size);
+    //ctx.restore();
+};
+
+Shape.prototype.updateAudio = function(player) {
+
+    //update audiolocation
+    if(this.isPlayer==false){
+
+       this.panner.setPosition(this.getCenter().x,this.getCenter().y,50);
+
+       var midfrequency=(maxfreq-minfreq)/2;
+       this.source.frequency.value=midfrequency;
+
+       var lowerfrequency=midfrequency/3;
+       var higherfrequency=midfrequency+lowerfrequency;
+
+       if(this.size<player.size)
+       {
+        this.source.frequency.value=higherfrequency;
+    }
+
+    if(this.size>player.size)
+    {
+        this.source.frequency.value=lowerfrequency;
+    }
+
+} else if(this.isPlayer){
+
+   this.listener.setPosition(this.getCenter().x,this.getCenter().y,50);
+
+}
+};
 
 Shape.prototype.getCenter = function(){
     return {x: this.x+(this.size/2), y: this.y+(this.size/2)};
 };
-    
+
 Shape.prototype.changeSize = function(ratio) {
     this.size*=ratio;
 };
 
-    
-//Array for storing shapes
-var shapes = [];
-for(var i=0; i<numShapes; i++){
-    var size = generateSize();
-    shapes.push(new Shape(generateX(size),generateY(size),size,randomColor()));
-    console.log("shape");
+Shape.prototype.findNextMove = function(){
+    var closestX;
+    var closestY;
+    var closestDist = -1;
+    var robot = this;
+    robot.targetAcquired = false;
+    robot.dangerAcquired = false;
+    var rangeMultiplier = 2.5;
+    //var danger = undefined;
+
+    //finding target to chase or run away from
+    //checking shape locations
+    shapes.forEach(function(shape){
+        var dist = getDistance(shape.getCenter().x,shape.getCenter().y,robot.getCenter().x,robot.getCenter().y);
+        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
+            closestDist = dist;
+            closestX = shape.x;
+            closestY = shape.y;
+            if(robot.size>shape.size){
+                robot.targetAcquired = true;
+            }
+        }
+    });
+    //checking robot locations
+    robots.forEach(function(robot2){
+        if(robot!=robot2){
+        var dist = getDistance(robot2.getCenter().x,robot2.getCenter().y,robot.getCenter().x,robot.getCenter().y);
+        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
+            closestDist = dist;
+            closestX = robot2.x;
+            closestY = robot2.y;
+            if(robot.size>robot2.size){
+                robot.targetAcquired = true;
+            }
+            // else if(robot.size<robot2.size){
+            //     danger = robot2;
+            //     robot.dangerAcquired = true;
+            // }
+        }
+        }
+    });
+    //checking player location
+    var dist = getDistance(player.getCenter().x,player.getCenter().y,robot.getCenter().x,robot.getCenter().y);
+        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
+            closestDist = dist;
+            closestX = player.x;
+            closestY = player.y;
+            if(robot.size>player.size){
+                robot.targetAcquired = true;
+            }
+            // else if(robot.size<player.size){
+            //     danger = player;
+            //     robot.dangerAcquired = true;
+            // }
+      }
+
+
+    if(robot.targetAcquired){
+        console.log("chasing");
+        var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));   
+        var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
+        robot.x=(closestX-robot.x)/speedFactor+robot.x;
+        robot.y=(closestY-robot.y)/speedFactor+robot.y;
+    }
+    // else if(robot.dangerAcquired){
+    //     //var escapeDistance = (danger.size*rangeMultiplier+5)-closestDist;
+    //     console.log("running away");
+    //     var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));   
+    //     var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
+    //     robot.x=(closestX-robot.x)/speedFactor-robot.x;
+    //     robot.y=(closestY-robot.y)/speedFactor-robot.y;
+    // }
+    else{   
+        console.log("target not acquired");
+        if(robot.justAte){
+            console.log("justate")
+            robot.speedx*=-1;
+            robot.speedy*=-1;
+            robot.justAte=false;
+        }
+        robot.autoMove();
+    }
+};
+
+Shape.prototype.run = function(shape){
+    //if(shape.x<this.x && shape.y)
+};
+
+Shape.prototype.checkCollision = function(currentTime,shape2){
+        var shape1 = this;
+        var half=(shape2.size)/2;
+        if((getDistance(shape1.x,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=half
+            || getDistance(shape1.x+shape1.size,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=half
+            || getDistance(shape1.x,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=half
+            || getDistance(shape1.x+shape1.size,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=half
+            || getDistance(shape1.getCenter().x,shape1.getCenter().y,shape2.getCenter().x,shape2.getCenter().y)
+            <=(shape1.size+shape2.size)/2) && shape2.inCollision==undefined)
+        {
+            if (shape1.size>shape2.size){
+                shape1.StartAnimation(currentTime, 500, shape1.size + shape2.size/3,1);
+                shape1.shapesEaten+=1;
+                shape2.speedx=0;
+                shape2.speedy=0;
+                shape2.inCollision = true;
+                shape2.StartAnimation(currentTime, 500, 0,0);
+            }
+        }
+
+        if(shape1.isPlayer==true){
+        //audio on/off for radar
+        if(getDistance(shape1.x,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
+            || getDistance(shape1.x+shape1.size,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
+            || getDistance(shape1.x,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
+            || getDistance(shape1.x+shape1.size,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
+            || getDistance(shape1.getCenter().x,shape1.getCenter().y,shape2.getCenter().x,shape2.getCenter().y)
+            <=shape1.radarSize+shape2.size/2
+            )
+        {
+            shape2.updateAudio(shape1);    
+            shape2.gainNode.gain.value = 1;
+        }
+        else {
+            shape2.gainNode.gain.value = 0;
+        }
+    }
+};
+
+Shape.prototype.checkCollisions = function(currentTime){
+    var entity = this;
+    shapes.forEach(function(shape){
+        entity.checkCollision(currentTime,shape);
+    });
+    robots.forEach(function(robot){
+        if(entity!=robot){
+        entity.checkCollision(currentTime,robot);
+        }
+    });
+    if(entity!=player){
+    entity.checkCollision(currentTime,player);
+    }
+};
+
+Shape.prototype.drawRadar= function(ctx){
+
+    var centerX=this.x+this.size/2;
+    var centerY= this.y+this.size/2;
+    var now= new Date();
+    var sec=now.getSeconds();
+
+    var radarRatio=(sec%5)/10;
+
+    this.radarSize=initradarsize*(1+radarRatio);
+
+    var a=(this.size/2)*(this.size/2);
+    var b=(this.size/2)*(this.size/2);
+    var c= Math.sqrt(a+b);
+
+    if(this.radarSize<c)
+    {
+        this.radarSize=(c)*(1+radarRatio);
+    }
+    ctx.beginPath()
+    ctx.arc(centerX,centerY,this.radarSize,0,Math.PI*2,true);
+    ctx.strokeStyle=this.color;
+    ctx.stroke();
+    ctx.closePath();
 }
 
-//Player shape
-var player = new Shape(player_x,player_y,player_size,randomColor());
+Shape.prototype.autoMove = function(){
+    var shape = this;
+    var time = (new Date()).getTime() - startTime;
+    var newX = shape.x+(shape.speedx); // * time / 1000);
+    var newY = shape.y+(shape.speedy); //* time / 1000);
+    if(shape.speedx>0 && newX<(canvas.width - shape.size)){
+        shape.x = newX;
+    }
+    else if (shape.speedx>0){
+        shape.speedx*=-1;
+        shape.x-=1;
+    }
+    if(shape.speedx<0 && newX>0){
+        shape.x = newX;
+    }
+    else if (shape.speedx<0){
+        shape.speedx*=-1;
+        shape.x+=1;
+    }
+    if(shape.speedy<0 && newY>0){
+        shape.y = newY;
+    }
+    else if (shape.speedy<0){
+        shape.speedy*=-1;
+        shape.y+=1;
+    }
+    if(shape.speedy>0 && newY<(canvas.height - shape.size)){
+        shape.y = newY;
+    }
+    else if (shape.speedy>0){
+        shape.speedy*=-1;
+        shape.y-=1;
+    }
+}
+
+Shape.prototype.IsAnimating = function() {
+    return this.AnimationStartTime != undefined;
+};
+
+Shape.prototype.StartAnimation = function(time, period, newSize,newGain) {
+    this.AnimationStartTime = time;
+    this.AnimationStartSize = this.size;
+    this.AnimationStopSize = newSize;
+
+    this.AnimationStartGain=this.gainNode.gain.value;
+    this.AnimationStopGain=newGain;
+    this.AnimationPeriod = period;
+};
+
+Shape.prototype.DoAnimation = function(time) {
+    if (this.IsAnimating())
+    {
+        var deltaTime = time - this.AnimationStartTime;
+
+        if (deltaTime >= this.AnimationPeriod)
+            this.StopAnimation();
+        else
+        {
+            var sizeDelta = this.AnimationStopSize - this.AnimationStartSize;
+
+            var gainDelta= this.AnimationStopGain-this.AnimationStartGain;
+
+            this.size = this.AnimationStartSize + sizeDelta *(deltaTime)/this.AnimationPeriod;
+
+            this.gainNode.gain.value=this.AnimationStartGain + gainDelta *(deltaTime)/this.AnimationPeriod;
+        }
+    }
+};
+
+
+Shape.prototype.StopAnimation = function() {
+    this.size = this.AnimationStopSize;
+    if(this.AnimationStopSize===0)
+    {
+        this.gainNode.gain.value = 0;
+        //this.source.stop();
+
+    }
+    this.AnimationStartTime = undefined;
+    this.AnimationStartSize = undefined;
+    this.AnimationStopSize = undefined;
+    this.AnimationPeriod = undefined;
+    //this.targetAcquired=false;
+    this.justAte=true;
+};
+
+Shape.prototype.drain = function(){
+    var drainFactor = this.size*0.001;
+    this.size-= drainFactor;
+}
+
+function init() {
+    for(var i=0; i<numShapes; i++){
+        var size = generateSize();
+        shapes.push(new Shape(generateX(size),generateY(size),size,randomColor(),"square",getRandomIntInclusive(minspeed,maxspeed),getRandomIntInclusive(minspeed,maxspeed),false));
+    }
+
+    for(var i=0; i<robot_count; i++){
+        var position = main_position_container.pop();
+        var robot = new Shape(position.x,position.y,robot_size,main_color_container.pop(),"robot");
+        if(robot.x==0){robot.speedx=robot_speed;}
+        else{robot.speedx=-robot_speed;}
+        if(robot.y==0){robot.speedy=robot_speed;}
+        else{robot.speedy=-robot_speed;}
+        robots.push(robot);
+    }
+
+        var position = main_position_container.pop();
+        player = new Shape(position.x,position.y,player_size,main_color_container.pop(),"player");
+};
+
+function regenerateShapes(currentTime){
+    if(shapes.length<minNumShapes){
+        for(var i=0; i<2; i++){
+        var size = generateSize();
+        shapes.push(new Shape(generateX(size),generateY(size),0,randomColor(),"square",getRandomIntInclusive(minspeed,maxspeed),getRandomIntInclusive(minspeed,maxspeed),false));
+        shapes[shapes.length-1].StartAnimation(currentTime,500,size,0);
+    }
+    }
+};
 
 document.addEventListener("keydown", keyDownHandler, false);
 document.addEventListener("keyup", keyUpHandler, false);
@@ -106,7 +649,7 @@ function keyDownHandler(e) {
     else if(e.keyCode == 37) {
         leftPressed = true;
     }
-     if(e.keyCode == 40) {
+    if(e.keyCode == 40) {
         upPressed = true;
     }
     else if(e.keyCode == 38) {
@@ -122,7 +665,7 @@ function keyUpHandler(e) {
         leftPressed = false;
     }
 
-     if(e.keyCode == 40) {
+    if(e.keyCode == 40) {
         upPressed = false;
     }
     else if(e.keyCode == 38) {
@@ -139,63 +682,56 @@ function resize_canvas(){
             canvas.width=canvas.height*ratio;
             var changeInWidthRatio=canvas.width/oldCanvasWidth;
             var changeInHeightRatio=canvas.height/oldCanvasHeight;
-                shapes.forEach(function(shape){
-                    shape.x*=changeInWidthRatio;
-                    shape.y*=changeInHeightRatio;
-                    shape.changeSize(changeInHeightRatio);
-                });
+            shapes.forEach(function(shape){
+                shape.x*=changeInWidthRatio;
+                shape.y*=changeInHeightRatio;
+                shape.changeSize(changeInHeightRatio);
+            });
+                player.x*=changeInWidthRatio;
+                player.y*=changeInHeightRatio;
                 player.changeSize(changeInHeightRatio);
+            robots.forEach(function(robot){
+                robot.x*=changeInWidthRatio;
+                robot.y*=changeInHeightRatio;
+                robot.changeSize(changeInHeightRatio);
+            });            
         } else {
             canvas.width=window.innerWidth;
             canvas.height=canvas.width/ratio;
             var changeInWidthRatio=canvas.width/oldCanvasWidth;
             var changeInHeightRatio=canvas.height/oldCanvasHeight;
-                shapes.forEach(function(shape){
-                    shape.x*=changeInWidthRatio;
-                    shape.y*=changeInHeightRatio;
-                    shape.changeSize(changeInWidthRatio);
-                    shape.size*=changeInWidthRatio;
-                });
-
+            shapes.forEach(function(shape){
+                shape.x*=changeInWidthRatio;
+                shape.y*=changeInHeightRatio;
+                shape.changeSize(changeInWidthRatio);
+            });
+                player.x*=changeInWidthRatio;
+                player.y*=changeInHeightRatio;
                 player.changeSize(changeInWidthRatio);
+            robots.forEach(function(robot){
+                robot.x*=changeInWidthRatio;
+                robot.y*=changeInHeightRatio;
+                robot.changeSize(changeInWidthRatio);
+            });
         }
         
     }
 
 }
 
+//Method to get distance between two points
 function getDistance(x1,y1,x2,y2){
     return Math.sqrt(Math.pow(x1-x2,2)+Math.pow(y1-y2,2));
 }
-    
- function checkCollisions(){
-    for(var i=0; i<shapes.length; i++){
-        var shape=shapes[i];
-        var half=(shape.size)/2;
-        if(getDistance(player.x,player.y,shape.getCenter().x,shape.getCenter().y)<=half
-        || getDistance(player.x+player.size,player.y,shape.getCenter().x,shape.getCenter().y)<=half
-        || getDistance(player.x,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=half
-        || getDistance(player.x+player.size,player.y+player.size,shape.getCenter().x,shape.getCenter().y)<=half
-        || getDistance(player.getCenter().x,player.getCenter().y,shape.getCenter().x,shape.getCenter().y)
-        <=(player.size+shape.size)/2
-        )
-        {
-            var initialTime= new Date().getTime();
-            console.log("Collision!");
-            growShrink4(ctx, player.size+shape.size/2, shape, player, initialTime, shape.size, player.size);
-        }
-    }
- }   
 
-    
 //Method to generate random X coordinate for a shape
 function generateX(size){
-return Math.random() * (canvas.width-size);
+    return Math.random() * (canvas.width-size);
 }
 
 //Method to generate random Y coordinate for a shape
 function generateY(size){
-return Math.random() * (canvas.height-size);
+    return Math.random() * (canvas.height-size);
 }
 
 //Method to generate random size for a shape
@@ -203,27 +739,120 @@ function generateSize(){
     return Math.random() * (maxsize - minsize) + minsize;
 }
 
+// function drawBall() {
+//     console.log(x,y);
+//     console.log(mousex,mousey);
+//     ctx.beginPath();
+//     ctx.arc(x, y, size, 0, Math.PI*2);
 
-function draw() {
+//     ctx.fillStyle = "#0095DD";
+//     ctx.fill();
+
+//     //ctx.strokeRect(x,y,50,50);
+//     ctx.closePath();
+// }
+
+// function drawSquare() {
+//     console.log(x,y);
+//     console.log(mousex,mousey);
+//     ctx.beginPath();
+//     ctx.fillRect (x, y, size, size);
+//     ctx.fillStyle = "#0095DD";
+//     ctx.fill();
+//     ctx.closePath();
+
+// }
+
+//function speed() {
+    //var dist = Math.sqrt(pow(mousex-x,2)+pow(mousey-y,2));
+    //return dist
+//}
+
+
+function update() {
+       
+    var currentTime = (new Date()).getTime();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    resize_canvas(); 
-    checkCollisions();
     shapes.forEach(function(shape){
-        shape.draw(ctx);
+        shape.autoMove();
     });
-    player.draw(ctx);
-
-
-    var dist = Math.sqrt(Math.pow(mousex-player.x,2)+Math.pow(mousey-player.y,2));
-    var speedFactor=10*((maxDist-dist)/maxDist+1);
     
+    resize_canvas(); 
+    regenerateShapes(currentTime);
 
-    if(mousex>0 && mousex<canvas.width-(player.size/2) &&mousey>0 &&mousey<canvas.height){
-    player.x=(mousex-player.x)/speedFactor+player.x;
-    player.y=(mousey-player.y)/speedFactor+player.y;
+        player.checkCollisions(currentTime);
+
+        player.DoAnimation(currentTime);
+        if(player.size==0){
+            endGame(false);
+            return;
+        }
+    
+    for(var i=0; i<robots.length; i++){
+        var robot = robots[i];
+        robot.checkCollisions(currentTime);
+        robot.DoAnimation(currentTime);
+        if(robot.size==0){
+            robots.splice(i,1);
+        }
+    }
+         
+//make dark
+//    
+//    ctx.fillStyle="#000000"
+//    ctx.fillRect(0, 0, canvas.width, canvas.height);
+//    ctx.beginPath();
+//    ctx.arc(player.getCenter().x, player.getCenter().y, player.radarSize, 0, Math.PI*2);
+//    ctx.closePath();
+//    ctx.clip();
+//    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+
+for(var i=0; i<shapes.length; i++){
+    var shape = shapes[i];
+    shape.DoAnimation(currentTime);
+    if(shape.size==0){
+        shapes.splice(i,1);
+    }
+}
+
+if (robots.length == 0) {
+        endGame(true);
+        return;
     }
 
-    var speed = dist/50
+shapes.forEach(function(shape){
+    //shape.draw(ctx);
+    shape.regShape(ctx);
+});
+
+robots.forEach(function(robot){
+    robot.findNextMove();
+    robot.drain();
+    //robot.draw(ctx);
+    robot.regShape(ctx);
+});
+
+    player.drain();
+    //player.draw(ctx);
+    player.regShape(ctx);
+    player.updateAudio(player);
+    player.drawRadar(ctx);
+
+
+var dist = getDistance(mousex,player.x,mousey,player.y);
+
+var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));
+
+var speedFactor=10*((maxDist-dist)/maxDist+1);
+
+
+if(mousex>0 && mousex<canvas.width &&mousey>0 &&mousey<canvas.height){
+    player.x=(mousex-player.x)/speedFactor+player.x;
+    player.y=(mousey-player.y)/speedFactor+player.y;
+}
+updateScore(player.shapesEaten);
+var speed = dist/50;
 
     //arrowkeys
     if(rightPressed && x < canvas.width-(size*2)) {
@@ -239,141 +868,42 @@ function draw() {
     else if(downPressed && y > 0) {
         player.y -= speed;
     }
+
+    window.requestAnimationFrame(update);
 }
-    
+
+
+
+function endGame(win){
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = "30px Arial";
+    ctx.textBaseline = 'middle';
+    //ctx.textAlign = 'center';
+    ctx.fillStyle="#FFFFFF";
+    if (win){
+        //ctx.fillText("game over",10,50);
+        ctx.fillText("you won",10,50);
+        console.log("win");
+    } else {
+        //ctx.fillText("game over",10,50);
+        ctx.fillText("you lost.",10,50);
+    }
+    shapes.forEach(function(shape){
+        shape.source.stop();
+    });
+
+}
+
 function getRandomIntInclusive(min, max) {
   min = Math.ceil(min);
   max = Math.floor(max);
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-    
-function growShrink1(ctx, limit, shape, player) {
-    clearInterval(intvl);
-    var intvl2 = setInterval(function() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        draw();
-        //shape.draw(ctx);
-        console.log(shape.size);
-        player.draw(ctx);
-        if(player.size>=limit && shape.size == 0) {
-            console.log("clear");
-            clearInterval(intvl2);
-            shapes.splice(i,1);
-        } else {
-            if (shape.size < 1) {
-                shape.size=0;
-            } else {
-                shape.size-=1;
-            }
-            if (player.size<limit) {
-                player.size+=1;
-            }
-        }
-    }
-    ,2);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    intvl=setInterval(draw, 10);
-}
-    
-function growShrink2(ctx, limit, shape, player, initialShape, initialPlayer, intialTime) {
-    ctx.save();
-    while (player.size<limit && shape.size >= 1) {
-        var current=new Date().getMilliseconds()
-        var time=current-intialTime+1;
-        console.log("time");
-        console.log(current); 
-        console.log(intialTime);
-        console.log(time);
-        if (player.size<limit) {
-            shape.size =initialShape-time;
-        }
-        if (shape.size >= 1) {
-            player.size=initialPlayer+time;
-        }
-    }
-    shape.size=0;
-    shape.draw(ctx);
-    player.draw(ctx);
-    console.log(shape.size);
-    console.log(player.size);
-    ctx.restore();
-}
-    
-    
-Shape.prototype.growShrink3 = function(ctx, intialTime, limit, initialSize) {
-    console.log(this.size);
-    console.log("limit");
-    console.log(limit);
-    ctx.save();
-    var current=new Date().getMilliseconds();
-    var time=current-intialTime+1;
-    console.log("time");
-    console.log(current); 
-    console.log(intialTime);
-    console.log(time);
-    while (this.size<limit) {
-        console.log("loop");
-        this.size=initialSize+time;
-        console.log(this.size);
-        player.draw(ctx);
-    }
-    this.draw(ctx);
-    console.log(this.size);
-    ctx.restore();
-}
 
-function growShrink4(ctx, limit, shape, player, initialTime, initialShape, initialPlayer) {
-    //console.log("start");
-    ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-//    console.log(shape.size);
-//    console.log(player.size);
-     while (player.size<limit || shape.size != 0) {
-        console.log("loop");
-        console.log(shape.size);
-        console.log(player.size);
-        var current=new Date().getTime();
-        var time=Math.abs(current-initialTime+1);
-         var slowTime=time/15;
-         console.log("time");
-         console.log(initialTime);
-         console.log(current);
-         console.log(time);
-         console.log(slowTime);
-         if (shape.size > 0) {
-            shape.size=initialShape-slowTime;
-        }
-        if (player.size<limit) {
-//            console.log("why neg");
-//            console.log(time);
-//            console.log();
-//            console.log();
-//            console.log();
-            
-            player.size=initialPlayer+slowTime;
-        }
-        if (shape.size <= 0) {
-            //console.log("zero");
-            shape.size=0;
-            shapes.splice(i,1);
-        }
-        console.log("draw");
-        draw();
-        player.draw(ctx);
-    }
-    ctx.restore();
-    //console.log("end");
-    return;
-}
-    
-var intvl=setInterval(draw, 10);
-    
-    
-    
-    
+var startTime = (new Date()).getTime();
+init();
+window.requestAnimationFrame(update);   
 
-        
-    
 </script>
 
 </body>
