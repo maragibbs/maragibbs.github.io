@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Run Eat Run Test</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta name="HandheldFriendly" content="True">
+	<meta name="MobileOptimized" content="320">	
+    <meta property="og:title" content="Run, Eat, Run!">
+    <meta property="og:image" content="https://raw.githubusercontent.com/nax47/Run-Eat-Run/master/RUNEATRUN.png">
+    <meta property="og:description" content="2-D minimalistic survival/exploration game">
+    <meta property="og:url" content="https://nax47.github.io/Run-Eat-Run">
+    <title>Run, Eat, Run!</title>
     <style>
         html,body {
             margin: 0;
@@ -12,190 +19,348 @@
         
         canvas {
             position: absolute;
-            top:0;
+            top:70px;
             bottom: 0;
             left: 0;
             right: 0;
             margin:auto;
+            border: blue thin solid;
         }
-        #hud  { position: absolute; top:; background-color: yellow; opacity: 0.8; border: 4px solid black; }
+        #hud  {
+            
+            background-color: #9AC7F9;
+            opacity: 1;
+            border: 4px solid black;
+            align-items: center;
+
+        }
     </style>
 
-<audio controls autoplay>
-  <source src="runeatrundraft1.mp3"> 
-  Your browser does not support the audio element.
-</audio>
+    <audio loop="loop" id= "audio1" autoplay onloadeddata="initialVolume()">
+      <source src="runeatrundraft1.mp3"> 
+      </audio>
 
-</head>
-<body>
+
+
+  </head>
+  <body>
 
     <canvas id="myCanvas" width="1000" height="750" ></canvas>
-    
+
     <div id="hud">
-    <table>
-        <tr><td>Score:</span></td><td id = 'score'>0</td><td><input type="button" value="Play Again" onClick="window.location.reload()"></input></td></tr>
-    </table>
+        <table>
+            <tr><td>Score:</span></td><td id = 'score'>0</td><td>High Score:</span></td><td id = 'highscore'>0</td><td><input type="button" value="Play Again" onClick="window.location.reload()"></input></td>
+                <td><input type="button" value="Pause Music" onClick="muteMusicVolume()" id="musicButton"></input></td>
+                <td><input type="button" value="Pause Sounds" onClick="muteSoundVolume()" id="soundButton"></input></td>
+                <script type="text/javascript">
+                    var myAudio = document.getElementById("audio1");  
+                        if(localStorage.getItem('musicVolume')){   
+                            if(localStorage.getItem('musicVolume')==='0'){
+                                var button = document.getElementById("musicButton");
+                                button.value="Play Music";
+                            }
+                        }
+                        if(localStorage.getItem('isSoundPlaying')){   
+                            if(localStorage.getItem('isSoundPlaying')==='false'){
+                                var button = document.getElementById("soundButton");
+                                button.value="Play Sounds";
+                            }
+                        }
+                </script>
+            </tr>
+        </table>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.4.4/randomColor.js"></script>
+    <script type="text/javascript" src="buffer-loader.js"></script>
     <script>
         "use strict";
-        var mousex;
-        var mousey;
-        var canvas = document.getElementById("myCanvas");
-        canvas.style.background = 'black';
-        canvas.addEventListener('mousemove', function(event){
-            mousex = event.clientX-canvas.getBoundingClientRect().left;
-            mousey = event.clientY-canvas.getBoundingClientRect().top;
-        });
-        var ctx = canvas.getContext("2d");
 
+var GameWorld = 
+{
+	Width: 0,
+	Height: 0,
+	SizeRatio: 3,
+	ViewPortX: 0,
+	ViewPortY: 0,
+	OutsideColor:'grey',
+
+	Initialize:function(cvs)
+	{
+		this.canvas = cvs;
+
+		this.currentCanvasHeight = this.canvas.height;
+		this.currentCanvasWidth = this.canvas.width;
+
+		this.Resize();
+	},
+	Resize: function ()
+	{
+		var newH = this.SizeRatio * this.canvas.height;
+		var newW = this.SizeRatio * this.canvas.width;
+
+		if (newH != this.Height || newW != this.Width)
+		{
+			this.Width = newW;
+			this.Height = newH;
+		}
+	},
+	MapMouseFromCanvas: function(cx, cy)
+	{
+		var br = this.canvas.getBoundingClientRect();
+		var x = cx-br.left + this.ViewPortX;
+		var y = cy-br.top + this.ViewPortY;
+
+		//console.log(cx, cy, x,y,br);
+
+		return {x:x, y:y};
+	},
+	SetViewPortCenter: function(ctx, x, y)
+	{
+		ctx.fillStyle = this.OutsideColor;
+		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+		var cH = this.canvas.height/2;
+		var cW = this.canvas.width/2;
+
+		var ox = x-cW;
+		var oy = y-cH;
+
+		var newx = Math.max(-cW, ox);
+		var newy = Math.max(-cH, oy);
+
+		ctx.translate(-newx, -newy);
+
+		this.ViewPortX = newx;
+		this.ViewPortY = newy;
+	}
+};
+
+var musicVolume;
 //audioctx
 var AudioContext = window.AudioContext || window.webkitAudioContext;
 var audioCtx = new AudioContext();
 
-var initradarsize=100;
+var flee;
+var chase;
+var eat;
+
+var isSoundPlaying;
+var playSound=false;
+
+var bufferLoader = new BufferLoader(
+    audioCtx,
+    [
+    "fleesound.mp3",
+    "chasesound.mp3",
+    "eatsound.mp3",
+    ],
+    finishedLoading
+    );
+
+bufferLoader.load();
+
+function initialVolume() {
+    var myAudio = document.getElementById("audio1");  
+    if(localStorage.getItem('musicVolume')){   
+        myAudio.volume = localStorage.getItem('musicVolume'); 
+    }
+    else {
+        myAudio.volume = 0.1; 
+        localStorage.setItem('musicVolume',.1);
+    }
+};
+
+function muteMusicVolume() {
+  var myAudio = document.getElementById("audio1"); 
+  var button = document.getElementById("musicButton");
+  if  (myAudio.volume > 0){
+    myAudio.volume = 0;
+    localStorage.setItem('musicVolume',0);
+    button.value = "Play Music";
+}
+else {
+   myAudio.volume = .1;
+   localStorage.setItem('musicVolume',.1);
+   button.value = "Pause Music";
+}
+};
+
+function muteSoundVolume() {
+    var button = document.getElementById("soundButton");
+    if(playSound===false)
+    {
+        playSound=true;
+        localStorage.setItem('isSoundPlaying',true);
+        button.value = "Pause Sounds";
+    }
+    else{
+        playSound=false;
+        localStorage.setItem('isSoundPlaying',false);
+        flee.gainNode.gain.value=0;
+        chase.gainNode.gain.value=0;
+        eat.gainNode.gain.value=0;
+        button.value = "Play Sounds";
+    }
+};
+
+var mousex;
+var mousey;
+var canvas = document.getElementById("myCanvas");
+canvas.style.background = 'white';
+canvas.addEventListener('mousemove', function(event){
+	var m = GameWorld.MapMouseFromCanvas(event.clientX, event.clientY);
+
+    mousex = m.x;
+    mousey = m.y;
+});
+var ctx = canvas.getContext("2d");
+
+function finishedLoading(bufferList) {
+    // Create three sources and buffers
+    var fleesoundsource = audioCtx.createBufferSource();
+    var chasesoundsource = audioCtx.createBufferSource();
+    var eatsoundsource = audioCtx.createBufferSource();
+    fleesoundsource.buffer = bufferList[0];
+    chasesoundsource.buffer = bufferList[1];
+    eatsoundsource.buffer = bufferList[2];
+    flee= new AudioPath(fleesoundsource);
+    chase=new AudioPath(chasesoundsource);
+    eat=new AudioPath(eatsoundsource);
+    flee.gainNode.gain.value=0;
+    chase.gainNode.gain.value=0;
+    eat.gainNode.gain.value=0;
+
+    if(localStorage.getItem('isSoundPlaying')){
+        playSound=('true' ===localStorage.getItem('isSoundPlaying'));
+    }
+    else
+    {
+        playSound=true;
+        localStorage.setItem('isSoundPlaying',true);
+    }
+};
+
+var AudioPath = function(bs){
+
+    this.bufferSource = audioCtx.createBufferSource();
+    this.bufferSource = bs;
+    this.bufferSource.loop=true;
+
+
+    this.gainNode = audioCtx.createGain();
+    this.gainNode.connect(audioCtx.destination);
+
+    this.panner = audioCtx.createPanner();
+    this.bufferSource.connect(this.panner);
+    this.panner.connect(this.gainNode);
+
+    this.gainNode.gain.value = 0;
+    this.bufferSource.start();
+
+    this.panner.panningModel = 'HRTF';
+    this.panner.distanceModel = 'inverse';
+    this.panner.refDistance = 5;
+    this.panner.maxDistance = 10000;
+    this.panner.rolloffFactor = 1;
+    this.panner.coneInnerAngle = 360;
+    this.panner.coneOuterAngle = 0;
+    this.panner.coneOuterGain = 0;
+
+    if(this.panner.orientationX) {
+      this.panner.orientationX.value = 1;
+      this.panner.orientationY.value = 0;
+      this.panner.orientationZ.value = 0;
+  } else {
+      this.panner.setOrientation(1,0,0);
+  }
+};
+
 var ratio=16/9; //aspect ratio for canvas size
 var player_size = 30;
 var robot_size = player_size; //fair game
-var robot_speed = 2.5;//main speed magnitude
+var robot_speed = 4;//main speed magnitude\
+var min_drain_size = player_size;
 
-//sum of players and robots should be 4!
-var player_count = 1;
-var robot_count = 3;
-var main_color_container = []; //colors for assigning to players and robots
-main_color_container.push("blue");
-main_color_container.push("red");
-main_color_container.push("yellow");
-main_color_container.push("green");
-var main_position_container = [];
-main_position_container.push({x:0,y:0});
-main_position_container.push({x:(canvas.width)-robot_size,y:canvas.height-robot_size});
-main_position_container.push({x:0,y:canvas.height-robot_size});
-main_position_container.push({x:canvas.width-robot_size,y:0});
+var robot_count = 5;
+var robot_id_counter = 0;
 
-var maxNumShapes=20;
-var minNumShapes=10;
+var maxNumShapes=90;
+var minNumShapes=60;
 var numShapes = getRandomIntInclusive(minNumShapes,maxNumShapes);
 
 var player = undefined;
 var robots = [];
 var shapes = [];
 
-//arrow keys
-var rightPressed = false;
-var leftPressed = false;
-var upPressed = false;
-var downPressed = false;
 
 //Shape sizes
-var maxsize = 25;
-var minsize = 15;
-var maxfreq=300;
-var minfreq=2000;
-var maxspeed = 0;
-var minspeed = 0;
+var max_shape_size = 20;
+var min_shape_size = 15;
 var spinSpeed = 250;
-//var backgroundMusic=createAudio("runeatrundraft1.mp3");
 
-function createAudio(src, options) {
-  var audio = document.createElement('audio');
-  audio.volume = options.volume || 0.5;
-  audio.loop   = options.loop;
-  audio.src    = src;
-  return audio;
+//highscore
+var highscore;
+
+function getRandomColor() {
+    var letters = '0123456789ABCDEF';
+    var color = '#';
+    for (var i = 0; i < 6; i++ ) {
+        color += letters[Math.floor(Math.random() * 16)];
+    }
+    return color;
 }
+
 
 function updateScore(integer){
     document.getElementById("score").innerHTML = integer;
 }
-        
+
+function updateHighScore(integer){
+
+    if(localStorage.getItem('highscore'))
+    {
+        var oldhighscore=parseInt(localStorage.getItem('highscore'));
+        if (oldhighscore<integer)
+        {
+            localStorage.setItem('highscore',integer);
+            document.getElementById("highscore").innerHTML = integer;
+        }
+        else{
+            document.getElementById("highscore").innerHTML = oldhighscore;
+        }
+
+    }
+    else {
+
+        highscore=integer;
+        localStorage.setItem('highscore',integer);
+        document.getElementById("highscore").innerHTML = integer;
+    }
+};
+
 var Point = function (x,y) {
     this.x=x;
     this.y=y;
 };
 
+
 //Shape object
-var Shape = function(x,y,size,color,type,speedx,speedy,isPlayer){
-    console.log("Shape created");
+var Shape = function(x,y,size,color,type){
+    //console.log("Shape created");
     this.x = x;
     this.y = y;
     this.size = size;
     this.color = color;
     this.type = type;
-    this.isPlayer=isPlayer;
-    this.speedx=speedx;
-    this.speedy=speedy;
-    this.shapesEaten = 0;
-    
-     this.points = []; 
+    this.points = []; 
     
     var minSides=2;
     var maxSides=6;        
-        
-        this.sides= getRandomIntInclusive(minSides,maxSides);
-        if (this.sides==2) {
-            this.sides=0;
-        }
 
-
-    this.radarSize=1;
-    this.gainNode = audioCtx.createGain();
-    this.gainNode.connect(audioCtx.destination);
-    this.gainNode.gain.value = 1;
-
-    if(this.isPlayer==false){
-        this.source= audioCtx.createOscillator();
-        this.source.type = 'sine';
-        this.source.frequency.value = (maxfreq-minfreq)*(this.size-minsize)/(maxsize-minsize)+minfreq ; // value in hertz
-
-        this.panner = audioCtx.createPanner();
-        this.source.connect(this.panner);
-        this.panner.connect(this.gainNode);
-
-        this.gainNode.gain.value = 0;
-        this.source.start();
-
-        this.panner.panningModel = 'HRTF';
-        this.panner.distanceModel = 'inverse';
-        this.panner.refDistance = 5;
-        this.panner.maxDistance = 10000;
-        this.panner.rolloffFactor = 1;
-        this.panner.coneInnerAngle = 360;
-        this.panner.coneOuterAngle = 0;
-        this.panner.coneOuterGain = 0;
-
-        if(this.panner.orientationX) {
-          this.panner.orientationX.value = 1;
-          this.panner.orientationY.value = 0;
-          this.panner.orientationZ.value = 0;
-      } else {
-          this.panner.setOrientation(1,0,0);
-      }
-
-      this.panner.positionX.value = this.x;
-      this.panner.positionY.value = this.y;
-      this.panner.positionZ.value = 50;
-
-  }
-  else if(this.isPlayer==true){
-    this.listener = audioCtx.listener;
-
-    if(this.listener.forwardX) {
-      this.listener.forwardX.value = 0;
-      this.listener.forwardY.value = 0;
-      this.listener.forwardZ.value = -1;
-      this.listener.upX.value = 0;
-      this.listener.upY.value = 1;
-      // this.listener.upZ.value = 0;
-  } else {
-      this.listener.setOrientation(0,0,-1,0,1,0);
-  }
-  this.listener.positionX.value = this.getCenter().x;
-  this.listener.positionY.value = this.getCenter().y;
-  this.listener.positionZ.value = 50;
-
-}
+    this.sides= getRandomIntInclusive(minSides,maxSides);
+    if (this.sides==2) {
+        this.sides=0;
+    }
 };
 
 function drawCircle(ctx,x,y,r,color) {
@@ -205,52 +370,48 @@ function drawCircle(ctx,x,y,r,color) {
     ctx.fill();
     ctx.closePath();
 }
-        
-        
-Shape.prototype.regShape= function(ctx) {
+
+
+Shape.prototype.drawShape= function(ctx) {
     this.points=[];
-    
-//    ctx.strokeStyle = "white";
-//    ctx.lineWidth = 3;
-    
-    
-    if (this.sides==0) {
-        drawCircle(ctx,this.x,this.y,this.size,this.color);
-    } else {
-        if (this.sides==3) {
-            var offset=Math.PI/6
-        } else if (this.sides==4) {
-             var offset=Math.PI/4
-        } else if (this.sides==5) {
-             var offset=3*Math.PI/2
-        } else if (this.sides==6) {
-             var offset=Math.PI
-        }
+
+if (this.sides==0) {
+    drawCircle(ctx,this.x,this.y,this.size,this.color);
+} else {
+    if (this.sides==3) {
+        var offset=Math.PI/6
+    } else if (this.sides==4) {
+       var offset=Math.PI/4
+   } else if (this.sides==5) {
+       var offset=3*Math.PI/2
+   } else if (this.sides==6) {
+       var offset=Math.PI
+   }
 
         //    x = cx + r * cos(a)
         //    y = cy + r * sin(a)
-    
+
     //var circumfrence=2*Math.PI*this.size
-         
-        var deltaAngle = 2*Math.PI/this.sides;
 
-        var currentAngle=offset;
-        do {  
-            var newPointX=(this.x) + (this.size*Math.cos(currentAngle));
-            var newPointY=(this.y) + (this.size*Math.sin(currentAngle));
+    var deltaAngle = 2*Math.PI/this.sides;
 
-            currentAngle+=deltaAngle;
+    var currentAngle=offset;
+    do {  
+        var newPointX=(this.x) + (this.size*Math.cos(currentAngle));
+        var newPointY=(this.y) + (this.size*Math.sin(currentAngle));
 
-            var newPoint=new Point(newPointX,newPointY);
-            this.points.push(newPoint);
-       }
-        while (currentAngle<=2*Math.PI+offset);
+        currentAngle+=deltaAngle;
+
+        var newPoint=new Point(newPointX,newPointY);
+        this.points.push(newPoint);
+    }
+    while (currentAngle<=2*Math.PI+offset);
 
 
-        var i=0;
+    var i=0;
         //ctx.moveTo(this.x,this.y);
         ctx.beginPath();
-       
+
         while(i<this.points.length){
             ctx.lineTo(this.points[i].x,this.points[i].y);
             i++;
@@ -259,49 +420,17 @@ Shape.prototype.regShape= function(ctx) {
         ctx.fill();
         
     }
-      if(this.type == "player" || this.type == "robot"){
-        ctx.fillStyle = "white";
-          ctx.stroke();
-//        ctx.font = "bold "+this.size/2+"px arial";
-//        var width = ctx.measureText(this.shapesEaten).width;
-//        var height = ctx.measureText(this.shapesEaten).height;
-//        ctx.fillText(this.shapesEaten, this.getCenter().x-(width/2), this.getCenter().y+(this.size/5));
+    if(this.type == "player" || this.type == "robot"){
+        ctx.lineWidth = this.size/20;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size/2.5, 0, 2*Math.PI);
+        ctx.strokeStyle="white";
+        ctx.stroke();
+        ctx.closePath();
     }
 };  
 
-
-
-//Method for shape to draw itself
-Shape.prototype.draw = function(ctx) {
-    //ctx.beginPath();
-    ctx.fillStyle = this.color;
-    ctx.strokeStyle = "white";;
-    ctx.lineWidth = 3;
-    if(this.type == "square"){
-        ctx.fillRect (this.x, this.y, this.size, this.size);
-    }
-    if(this.type == "circle"){
-        ctx.beginPath();
-        ctx.arc(this.getCenter().x,this.getCenter().y,this.size/2, 0, 2 * Math.PI, false);
-        ctx.fill();
-    }
-    if(this.type == "player" || this.type == "robot"){
-        ctx.beginPath();
-        ctx.rect(this.x, this.y, this.size, this.size);
-        ctx.fill();
-        ctx.stroke();
-        ctx.closePath();
-        ctx.beginPath();
-        ctx.fillStyle = "white";
-        ctx.font = "bold "+this.size/2+"px arial";
-        var width = ctx.measureText(this.shapesEaten).width;
-        var height = ctx.measureText(this.shapesEaten).height;
-        ctx.fillText(this.shapesEaten, this.getCenter().x-(width/2), this.getCenter().y+(this.size/5));
-    }
-    //ctx.closePath();
-    //console.log("Square number " + this.id + " has been created at: "+this.x+","+ this.y);
-};
-
+//not updated according to center
 Shape.prototype.drawSpin = function(ctx) {
     //ctx.save();
     var time = new Date();
@@ -310,171 +439,25 @@ Shape.prototype.drawSpin = function(ctx) {
     ctx.rotate( ((Math.PI)/spinSpeed)*time.getMilliseconds());
     ctx.fillRect (-this.size/2, -this.size/2, this.size, this.size);
     //ctx.restore();
-};
-
-Shape.prototype.updateAudio = function(player) {
-
-    //update audiolocation
-    if(this.isPlayer==false){
-
-       this.panner.setPosition(this.getCenter().x,this.getCenter().y,50);
-
-       var midfrequency=(maxfreq-minfreq)/2;
-       this.source.frequency.value=midfrequency;
-
-       var lowerfrequency=midfrequency/3;
-       var higherfrequency=midfrequency+lowerfrequency;
-
-       if(this.size<player.size)
-       {
-        this.source.frequency.value=higherfrequency;
-    }
-
-    if(this.size>player.size)
-    {
-        this.source.frequency.value=lowerfrequency;
-    }
-
-} else if(this.isPlayer){
-
-   this.listener.setPosition(this.getCenter().x,this.getCenter().y,50);
-
-}
-};
-
-Shape.prototype.getCenter = function(){
-    return {x: this.x+(this.size/2), y: this.y+(this.size/2)};
-};
-
-Shape.prototype.changeSize = function(ratio) {
-    this.size*=ratio;
-};
-
-Shape.prototype.findNextMove = function(){
-    var closestX;
-    var closestY;
-    var closestDist = -1;
-    var robot = this;
-    robot.targetAcquired = false;
-    robot.dangerAcquired = false;
-    var rangeMultiplier = 2.5;
-    //var danger = undefined;
-
-    //finding target to chase or run away from
-    //checking shape locations
-    shapes.forEach(function(shape){
-        var dist = getDistance(shape.getCenter().x,shape.getCenter().y,robot.getCenter().x,robot.getCenter().y);
-        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
-            closestDist = dist;
-            closestX = shape.x;
-            closestY = shape.y;
-            if(robot.size>shape.size){
-                robot.targetAcquired = true;
-            }
-        }
-    });
-    //checking robot locations
-    robots.forEach(function(robot2){
-        if(robot!=robot2){
-        var dist = getDistance(robot2.getCenter().x,robot2.getCenter().y,robot.getCenter().x,robot.getCenter().y);
-        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
-            closestDist = dist;
-            closestX = robot2.x;
-            closestY = robot2.y;
-            if(robot.size>robot2.size){
-                robot.targetAcquired = true;
-            }
-            // else if(robot.size<robot2.size){
-            //     danger = robot2;
-            //     robot.dangerAcquired = true;
-            // }
-        }
-        }
-    });
-    //checking player location
-    var dist = getDistance(player.getCenter().x,player.getCenter().y,robot.getCenter().x,robot.getCenter().y);
-        if(dist<=robot.size*rangeMultiplier && (dist<closestDist || closestDist==-1)){
-            closestDist = dist;
-            closestX = player.x;
-            closestY = player.y;
-            if(robot.size>player.size){
-                robot.targetAcquired = true;
-            }
-            // else if(robot.size<player.size){
-            //     danger = player;
-            //     robot.dangerAcquired = true;
-            // }
-      }
-
-
-    if(robot.targetAcquired){
-        console.log("chasing");
-        var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));   
-        var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
-        robot.x=(closestX-robot.x)/speedFactor+robot.x;
-        robot.y=(closestY-robot.y)/speedFactor+robot.y;
-    }
-    // else if(robot.dangerAcquired){
-    //     //var escapeDistance = (danger.size*rangeMultiplier+5)-closestDist;
-    //     console.log("running away");
-    //     var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));   
-    //     var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
-    //     robot.x=(closestX-robot.x)/speedFactor-robot.x;
-    //     robot.y=(closestY-robot.y)/speedFactor-robot.y;
-    // }
-    else{   
-        console.log("target not acquired");
-        if(robot.justAte){
-            console.log("justate")
-            robot.speedx*=-1;
-            robot.speedy*=-1;
-            robot.justAte=false;
-        }
-        robot.autoMove();
-    }
-};
-
-Shape.prototype.run = function(shape){
-    //if(shape.x<this.x && shape.y)
-};
+}; 
 
 Shape.prototype.checkCollision = function(currentTime,shape2){
-        var shape1 = this;
-        var half=(shape2.size)/2;
-        if((getDistance(shape1.x,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=half
-            || getDistance(shape1.x+shape1.size,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=half
-            || getDistance(shape1.x,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=half
-            || getDistance(shape1.x+shape1.size,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=half
-            || getDistance(shape1.getCenter().x,shape1.getCenter().y,shape2.getCenter().x,shape2.getCenter().y)
-            <=(shape1.size+shape2.size)/2) && shape2.inCollision==undefined)
-        {
-            if (shape1.size>shape2.size){
-                shape1.StartAnimation(currentTime, 500, shape1.size + shape2.size/3,1);
-                shape1.shapesEaten+=1;
-                shape2.speedx=0;
-                shape2.speedy=0;
-                shape2.inCollision = true;
-                shape2.StartAnimation(currentTime, 500, 0,0);
+    var shape1 = this;
+    if (getDistance(shape1.x,shape1.y,shape2.x,shape2.y)<=(shape1.size+shape2.size)/2 && shape2.inCollision==undefined){
+        if (shape1.size>shape2.size){
+            shape1.StartAnimation(currentTime, 500, shape1.size + shape2.size/3,1);
+            if(shape1.type=="player"){
+                shape1.player.shapesEaten+=1;
             }
-        }
-
-        if(shape1.isPlayer==true){
-        //audio on/off for radar
-        if(getDistance(shape1.x,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
-            || getDistance(shape1.x+shape1.size,shape1.y,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
-            || getDistance(shape1.x,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
-            || getDistance(shape1.x+shape1.size,shape1.y+shape1.size,shape2.getCenter().x,shape2.getCenter().y)<=shape1.radarSize
-            || getDistance(shape1.getCenter().x,shape1.getCenter().y,shape2.getCenter().x,shape2.getCenter().y)
-            <=shape1.radarSize+shape2.size/2
-            )
-        {
-            shape2.updateAudio(shape1);    
-            shape2.gainNode.gain.value = 1;
-        }
-        else {
-            shape2.gainNode.gain.value = 0;
+            if(shape2.type=="robot"){
+            shape2.robot.speedx=0;
+            shape2.robot.speedy=0;
+            }
+            shape2.inCollision = true;
+            shape2.StartAnimation(currentTime, 500, 0,0);
         }
     }
+
 };
 
 Shape.prototype.checkCollisions = function(currentTime){
@@ -484,74 +467,13 @@ Shape.prototype.checkCollisions = function(currentTime){
     });
     robots.forEach(function(robot){
         if(entity!=robot){
-        entity.checkCollision(currentTime,robot);
+            entity.checkCollision(currentTime,robot.shape);
         }
     });
     if(entity!=player){
-    entity.checkCollision(currentTime,player);
+        entity.checkCollision(currentTime,player.shape);
     }
 };
-
-Shape.prototype.drawRadar= function(ctx){
-
-    var centerX=this.x+this.size/2;
-    var centerY= this.y+this.size/2;
-    var now= new Date();
-    var sec=now.getSeconds();
-
-    var radarRatio=(sec%5)/10;
-
-    this.radarSize=initradarsize*(1+radarRatio);
-
-    var a=(this.size/2)*(this.size/2);
-    var b=(this.size/2)*(this.size/2);
-    var c= Math.sqrt(a+b);
-
-    if(this.radarSize<c)
-    {
-        this.radarSize=(c)*(1+radarRatio);
-    }
-    ctx.beginPath()
-    ctx.arc(centerX,centerY,this.radarSize,0,Math.PI*2,true);
-    ctx.strokeStyle=this.color;
-    ctx.stroke();
-    ctx.closePath();
-}
-
-Shape.prototype.autoMove = function(){
-    var shape = this;
-    var time = (new Date()).getTime() - startTime;
-    var newX = shape.x+(shape.speedx); // * time / 1000);
-    var newY = shape.y+(shape.speedy); //* time / 1000);
-    if(shape.speedx>0 && newX<(canvas.width - shape.size)){
-        shape.x = newX;
-    }
-    else if (shape.speedx>0){
-        shape.speedx*=-1;
-        shape.x-=1;
-    }
-    if(shape.speedx<0 && newX>0){
-        shape.x = newX;
-    }
-    else if (shape.speedx<0){
-        shape.speedx*=-1;
-        shape.x+=1;
-    }
-    if(shape.speedy<0 && newY>0){
-        shape.y = newY;
-    }
-    else if (shape.speedy<0){
-        shape.speedy*=-1;
-        shape.y+=1;
-    }
-    if(shape.speedy>0 && newY<(canvas.height - shape.size)){
-        shape.y = newY;
-    }
-    else if (shape.speedy>0){
-        shape.speedy*=-1;
-        shape.y-=1;
-    }
-}
 
 Shape.prototype.IsAnimating = function() {
     return this.AnimationStartTime != undefined;
@@ -562,8 +484,7 @@ Shape.prototype.StartAnimation = function(time, period, newSize,newGain) {
     this.AnimationStartSize = this.size;
     this.AnimationStopSize = newSize;
 
-    this.AnimationStartGain=this.gainNode.gain.value;
-    this.AnimationStopGain=newGain;
+    this.AnimationGain=newGain;
     this.AnimationPeriod = period;
 };
 
@@ -572,106 +493,296 @@ Shape.prototype.DoAnimation = function(time) {
     {
         var deltaTime = time - this.AnimationStartTime;
 
-        if (deltaTime >= this.AnimationPeriod)
+        if (deltaTime >= this.AnimationPeriod){
+            this.size=this.AnimationStopSize;
             this.StopAnimation();
+        }
         else
         {
             var sizeDelta = this.AnimationStopSize - this.AnimationStartSize;
 
-            var gainDelta= this.AnimationStopGain-this.AnimationStartGain;
+            if(playSound && this.type=="player"){
+
+                eat.gainNode.gain.value=this.AnimationGain;
+            }
+
+            // var gainDelta= this.AnimationStopGain-this.AnimationStartGain;
 
             this.size = this.AnimationStartSize + sizeDelta *(deltaTime)/this.AnimationPeriod;
 
-            this.gainNode.gain.value=this.AnimationStartGain + gainDelta *(deltaTime)/this.AnimationPeriod;
+            // this.gainNode.gain.value=this.AnimationStartGain + gainDelta *(deltaTime)/this.AnimationPeriod;
         }
     }
 };
 
-
 Shape.prototype.StopAnimation = function() {
-    this.size = this.AnimationStopSize;
-    if(this.AnimationStopSize===0)
-    {
-        this.gainNode.gain.value = 0;
-        //this.source.stop();
-
+    if(playSound){
+        eat.gainNode.gain.value=0;
     }
+    this.size = this.AnimationStopSize;
     this.AnimationStartTime = undefined;
     this.AnimationStartSize = undefined;
     this.AnimationStopSize = undefined;
     this.AnimationPeriod = undefined;
+    this.AnimationGain= undefined;
     //this.targetAcquired=false;
     this.justAte=true;
 };
 
 Shape.prototype.drain = function(){
-    var drainFactor = this.size*0.001;
-    this.size-= drainFactor;
-}
+    if (this.size>min_drain_size) {
+        var drainFactor = this.size*0.001;
+        this.size-= drainFactor;
+    }
+};
+
+var Robot = function(x,y,size,color,speedx,speedy){
+    this.shape = new Shape(x,y,size,color,"robot");
+    this.shape.robot = this;
+    this.speedx = speedx;
+    this.speedy = speedy;
+    this.id = ++robot_id_counter;
+    console.log("Robot "+this.id+" created");
+};
+
+Robot.prototype.autoMove = function(){
+    var robot = this;
+    var time = (new Date()).getTime() - startTime;
+    var newX = robot.shape.x+(robot.speedx); // * time / 1000);
+    var newY = robot.shape.y+(robot.speedy); //* time / 1000);
+    if(robot.speedx>0 && newX<(GameWorld.Width - robot.shape.size)){
+        robot.shape.x = newX;
+    }
+    else if (robot.speedx>0){
+        robot.speedx*=-1;
+        robot.shape.x-=1;
+    }
+    if(robot.speedx<0 && newX>robot.shape.size){
+        robot.shape.x = newX;
+    }
+    else if (robot.speedx<0){
+        robot.speedx*=-1;
+        robot.shape.x+=1;
+    }
+    if(robot.speedy<0 && newY>robot.shape.size){
+        robot.shape.y = newY;
+    }
+    else if (robot.speedy<0){
+        robot.speedy*=-1;
+        robot.shape.y+=1;
+    }
+    if(robot.speedy>0 && newY<(GameWorld.Height - robot.shape.size)){
+        robot.shape.y = newY;
+    }
+    else if (robot.speedy>0){
+        robot.speedy*=-1;
+        robot.shape.y-=1;
+    }
+};
+
+Robot.prototype.findNextMove = function(){
+    var closestX;
+    var closestY;
+    var closestDist = -1;
+    var robot = this;
+    robot.targetAcquired = false;
+    robot.dangerAcquired = false;
+    robot.radarSize = robot.shape.size*4;
+    //var danger = undefined;
+
+    //finding target to chase or run away from
+    //checking shape locations
+    shapes.forEach(function(shape){
+         var dist = getDistance(shape.x,shape.y,robot.shape.x,robot.shape.y)-(shape.size/2);
+        if(dist<=robot.radarSize && (dist<closestDist || closestDist==-1)){
+            closestDist = dist;
+            closestX = shape.x;
+            closestY = shape.y;
+            if(robot.shape.size>shape.size){
+                robot.targetAcquired = true;
+            }
+        }
+    });
+    
+    //checking robot locations
+    robots.forEach(function(robot2){
+        if(robot!=robot2){
+            var dist = getDistance(robot2.shape.x,robot2.shape.y,robot.shape.x,robot.shape.y);
+            if(dist<=robot.radarSize && (dist<closestDist || closestDist==-1)){
+                closestDist = dist;
+                closestX = robot2.shape.x;
+                closestY = robot2.shape.y;
+                if(robot.shape.size>robot2.shape.size){
+                    robot.targetAcquired = true;
+                }
+            // else if(robot.shape.size<robot2.shape.size){
+            //     danger = robot2;
+            //     robot.dangerAcquired = true;
+            // }
+        }
+    }
+});
+    //checking player location
+    var dist = getDistance(player.shape.x,player.shape.y,robot.shape.x,robot.shape.y);
+    if(dist<=robot.radarSize && (dist<closestDist || closestDist==-1)){
+        closestDist = dist;
+        closestX = player.shape.x;
+        closestY = player.shape.y;
+        if(robot.shape.size>player.shape.size){
+            robot.targetAcquired = true;
+        }
+            // else if(robot.shape.size<player.shape.size){
+            //     danger = player;
+            //     robot.dangerAcquired = true;
+            // }
+        }
+
+
+        if(robot.targetAcquired){
+        //console.log("chasing");
+        var maxDist= Math.sqrt(Math.pow(GameWorld.Width,2)+Math.pow(GameWorld.Height,2));   
+        var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
+        robot.shape.x=(closestX-robot.shape.x)/speedFactor+robot.shape.x;
+        robot.shape.y=(closestY-robot.shape.y)/speedFactor+robot.shape.y;
+    }
+    // else if(robot.dangerAcquired){
+    //     //var escapeDistance = (danger.size*rangeMultiplier+5)-closestDist;
+    //     console.log("running away");
+    //     var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));   
+    //     var speedFactor=10*((maxDist-closestDist)/maxDist+1); // higher speedFactor means slower acceleration
+    //     robot.shape.x=(closestX-robot.shape.x)/speedFactor-robot.shape.x;
+    //     robot.shape.y=(closestY-robot.shape.y)/speedFactor-robot.shape.y;
+    // }
+    else{   
+        //console.log("target not acquired");
+        if(robot.justAte){
+            //console.log("justate")
+            robot.speedx*=-1;
+            robot.speedy*=-1;
+            robot.justAte=false;
+        }
+        robot.autoMove();
+    }
+};
+
+var Player = function(x,y,size,color){
+    this.shape = new Shape(x,y,size,color,"player");
+    this.shape.player = this;
+    this.shapesEaten = 0;
+    this.radarSize=this.shape.size*4;
+    this.listener = audioCtx.listener;
+
+    if(this.listener.forwardX) {
+          this.listener.forwardX.value = 0;
+          this.listener.forwardY.value = 0;
+          this.listener.forwardZ.value = -1;
+          this.listener.upX.value = 0;
+          this.listener.upY.value = 1;
+      // this.listener.upZ.value = 0;
+    } else {
+      this.listener.setOrientation(0,0,-1,0,1,0);
+    }
+    this.listener.positionX.value = this.shape.x;
+    this.listener.positionY.value = this.shape.y;
+    this.listener.positionZ.value = 50;
+};
+
+Player.prototype.updateAudio = function(){
+    //update audiolocation
+     this.listener.setPosition(this.shape.x,this.shape.y,50);
+};
+
+Player.prototype.numShapesRegen = function(){
+    return 20*numShapes/this.shape.size;
+}; 
+
+Player.prototype.checkRadar = function(){
+  //audio on/off for radar
+    var player=this;
+    for(var i=0;i<robots.length;i++) {
+    var robot=robots[i];
+    if(getDistance(player.shape.x,player.shape.y,robot.shape.x,robot.shape.y)<=player.radarSize+robot.shape.size/2
+    || getDistance(player.shape.x,player.shape.y,robot.shape.x,robot.shape.y)<=(player.radarSize+robot.shape.size)/2)
+    {   
+        if(player.shape.size<robot.shape.size)
+        {
+        flee.gainNode.gain.value=1;
+        flee.panner.setPosition(robot.shape.x,robot.shape.y,50);
+        break;
+        }
+
+        else if(player.shape.size>robot.shape.size)
+        {
+        chase.gainNode.gain.value=1;
+        chase.panner.setPosition(robot.shape.x,robot.shape.y,50);
+        break;
+        }    
+    }
+    else {
+    flee.gainNode.gain.value=0;
+    chase.gainNode.gain.value=0;
+    }
+    }
+};
+
+Player.prototype.drawRadar= function(ctx){
+
+    var now= new Date();
+    var sec=now.getSeconds();
+
+    var radarRatio=(sec%5)/10;
+
+
+    this.radarSize=this.shape.size*4*(1+radarRatio);
+    ctx.beginPath()
+    ctx.arc(this.shape.x,this.shape.y,this.radarSize,0,Math.PI*2,true);
+    ctx.strokeStyle=this.shape.color;
+    ctx.stroke();
+    ctx.closePath();
+};
 
 function init() {
+
+	GameWorld.Initialize(canvas);
+
     for(var i=0; i<numShapes; i++){
         var size = generateSize();
-        shapes.push(new Shape(generateX(size),generateY(size),size,randomColor(),"square",getRandomIntInclusive(minspeed,maxspeed),getRandomIntInclusive(minspeed,maxspeed),false));
+        shapes.push(new Shape(generateX(size),generateY(size),size,getRandomColor(),"shape"));
     }
 
     for(var i=0; i<robot_count; i++){
-        var position = main_position_container.pop();
-        var robot = new Shape(position.x,position.y,robot_size,main_color_container.pop(),"robot");
-        if(robot.x==0){robot.speedx=robot_speed;}
+        var robot = new Robot(generateX(robot_size),generateY(robot_size),robot_size,getRandomColor(),0,0);
+        if(robot.shape.x<GameWorld.Width/2){robot.speedx=robot_speed;}
         else{robot.speedx=-robot_speed;}
-        if(robot.y==0){robot.speedy=robot_speed;}
+        if(robot.shape.y<GameWorld.Height/2){robot.speedy=robot_speed;}
         else{robot.speedy=-robot_speed;}
         robots.push(robot);
     }
 
-        var position = main_position_container.pop();
-        player = new Shape(position.x,position.y,player_size,main_color_container.pop(),"player");
+    player = new Player(generateX(player_size),generateY(player_size),player_size,getRandomColor());
 };
 
-function regenerateShapes(currentTime){
-    if(shapes.length<minNumShapes){
+function regenerateShapes(currentTime,numShapesRegen){
+    if(shapes.length<numShapesRegen){
         for(var i=0; i<2; i++){
-        var size = generateSize();
-        shapes.push(new Shape(generateX(size),generateY(size),0,randomColor(),"square",getRandomIntInclusive(minspeed,maxspeed),getRandomIntInclusive(minspeed,maxspeed),false));
-        shapes[shapes.length-1].StartAnimation(currentTime,500,size,0);
-    }
-    }
-};
+            var size = generateSize();
+            shapes.push(new Shape(generateX(size),generateY(size),1,getRandomColor(),"shape"));
+            shapes[shapes.length-1].StartAnimation(currentTime,500,size,0);    }
+        }
+    };
 
-document.addEventListener("keydown", keyDownHandler, false);
-document.addEventListener("keyup", keyUpHandler, false);
-
-function keyDownHandler(e) {
-    if(e.keyCode == 39) {
-        rightPressed = true;
-    }
-    else if(e.keyCode == 37) {
-        leftPressed = true;
-    }
-    if(e.keyCode == 40) {
-        upPressed = true;
-    }
-    else if(e.keyCode == 38) {
-        downPressed = true;
-    }
-}
-
-function keyUpHandler(e) {
-    if(e.keyCode == 39) {
-        rightPressed = false;
-    }
-    else if(e.keyCode == 37) {
-        leftPressed = false;
-    }
-
-    if(e.keyCode == 40) {
-        upPressed = false;
-    }
-    else if(e.keyCode == 38) {
-        downPressed = false;
-    }
-}
+    function regenerateRobots(currentTime){
+        if(robots.length<robot_count){
+            var size= getRandomIntInclusive(player.shape.size*.5, player.shape.size*1.5);
+            var robot = new Robot(generateX(robot_size),generateY(robot_size),1,getRandomColor(),0,0);
+            if(robot.shape.x<GameWorld.Width/2){robot.speedx=robot_speed;}
+            else{robot.speedx=-robot_speed;}
+            if(robot.shape.y<GameWorld.Height/2){robot.speedy=robot_speed;}
+            else{robot.speedy=-robot_speed;}
+            robots.push(robot);
+            robots[robots.length-1].shape.StartAnimation(currentTime,500,size,0);
+        }
+    };
 
 function resize_canvas(){
     var oldCanvasWidth = canvas.width;
@@ -685,15 +796,15 @@ function resize_canvas(){
             shapes.forEach(function(shape){
                 shape.x*=changeInWidthRatio;
                 shape.y*=changeInHeightRatio;
-                shape.changeSize(changeInHeightRatio);
+                shape.size*=changeInHeightRatio;
             });
-                player.x*=changeInWidthRatio;
-                player.y*=changeInHeightRatio;
-                player.changeSize(changeInHeightRatio);
+            player.shape.x*=changeInWidthRatio;
+            player.shape.y*=changeInHeightRatio;
+            player.shape.size*=changeInHeightRatio;
             robots.forEach(function(robot){
-                robot.x*=changeInWidthRatio;
-                robot.y*=changeInHeightRatio;
-                robot.changeSize(changeInHeightRatio);
+                robot.shape.x*=changeInWidthRatio;
+                robot.shape.y*=changeInHeightRatio;
+                robot.shape.size*=changeInHeightRatio;
             });            
         } else {
             canvas.width=window.innerWidth;
@@ -703,21 +814,22 @@ function resize_canvas(){
             shapes.forEach(function(shape){
                 shape.x*=changeInWidthRatio;
                 shape.y*=changeInHeightRatio;
-                shape.changeSize(changeInWidthRatio);
+                shape.size*=changeInWidthRatio;
             });
-                player.x*=changeInWidthRatio;
-                player.y*=changeInHeightRatio;
-                player.changeSize(changeInWidthRatio);
+            player.shape.x*=changeInWidthRatio;
+            player.shape.y*=changeInHeightRatio;
+            player.shape.size*=changeInWidthRatio;
             robots.forEach(function(robot){
-                robot.x*=changeInWidthRatio;
-                robot.y*=changeInHeightRatio;
-                robot.changeSize(changeInWidthRatio);
+                robot.shape.x*=changeInWidthRatio;
+                robot.shape.y*=changeInHeightRatio;
+                robot.shape.size*=changeInWidthRatio;
             });
         }
         
+        GameWorld.Resize();
     }
 
-}
+};
 
 //Method to get distance between two points
 function getDistance(x1,y1,x2,y2){
@@ -726,42 +838,18 @@ function getDistance(x1,y1,x2,y2){
 
 //Method to generate random X coordinate for a shape
 function generateX(size){
-    return Math.random() * (canvas.width-size);
+    return Math.random() * (GameWorld.Width-size);
 }
 
 //Method to generate random Y coordinate for a shape
 function generateY(size){
-    return Math.random() * (canvas.height-size);
+    return Math.random() * (GameWorld.Height-size);
 }
 
 //Method to generate random size for a shape
 function generateSize(){
-    return Math.random() * (maxsize - minsize) + minsize;
+    return Math.random() * (max_shape_size - min_shape_size) + min_shape_size;
 }
-
-// function drawBall() {
-//     console.log(x,y);
-//     console.log(mousex,mousey);
-//     ctx.beginPath();
-//     ctx.arc(x, y, size, 0, Math.PI*2);
-
-//     ctx.fillStyle = "#0095DD";
-//     ctx.fill();
-
-//     //ctx.strokeRect(x,y,50,50);
-//     ctx.closePath();
-// }
-
-// function drawSquare() {
-//     console.log(x,y);
-//     console.log(mousex,mousey);
-//     ctx.beginPath();
-//     ctx.fillRect (x, y, size, size);
-//     ctx.fillStyle = "#0095DD";
-//     ctx.fill();
-//     ctx.closePath();
-
-// }
 
 //function speed() {
     //var dist = Math.sqrt(pow(mousex-x,2)+pow(mousey-y,2));
@@ -770,134 +858,131 @@ function generateSize(){
 
 
 function update() {
-       
+   resize_canvas(); 
+
+	ctx.resetTransform();
+
+	//ctx.clearRect(0,0,canvas.width, canvas.height);
+
+ 	GameWorld.SetViewPortCenter(ctx, player.shape.x, player.shape.y);
+
+
     var currentTime = (new Date()).getTime();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    shapes.forEach(function(shape){
-        shape.autoMove();
-    });
+ 
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, GameWorld.Width, GameWorld.Height);
+  
+   
+    regenerateShapes(currentTime,player.numShapesRegen());
+    regenerateRobots(currentTime);
+
+
+    player.shape.checkCollisions(currentTime);
+    player.shape.DoAnimation(currentTime);
+    if(player.shape.size==0){
+        endGame();
+        return;
+    }
     
-    resize_canvas(); 
-    regenerateShapes(currentTime);
-
-        player.checkCollisions(currentTime);
-
-        player.DoAnimation(currentTime);
-        if(player.size==0){
-            endGame(false);
-            return;
-        }
     
     for(var i=0; i<robots.length; i++){
         var robot = robots[i];
-        robot.checkCollisions(currentTime);
-        robot.DoAnimation(currentTime);
-        if(robot.size==0){
+        robot.shape.checkCollisions(currentTime);
+        robot.shape.DoAnimation(currentTime);
+        if(robot.shape.size==0){
+            console.log("Robot "+robot.id+" destroyed");
             robots.splice(i,1);
         }
     }
-         
-//make dark
-//    
-//    ctx.fillStyle="#000000"
-//    ctx.fillRect(0, 0, canvas.width, canvas.height);
-//    ctx.beginPath();
-//    ctx.arc(player.getCenter().x, player.getCenter().y, player.radarSize, 0, Math.PI*2);
-//    ctx.closePath();
-//    ctx.clip();
-//    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-
-for(var i=0; i<shapes.length; i++){
-    var shape = shapes[i];
-    shape.DoAnimation(currentTime);
-    if(shape.size==0){
-        shapes.splice(i,1);
+    
+    for(var i=0; i<shapes.length; i++){
+        var shape = shapes[i];
+        shape.DoAnimation(currentTime);
+        if(shape.size==0){
+            shapes.splice(i,1);
+        }
     }
-}
+    
+    dark();
 
-if (robots.length == 0) {
-        endGame(true);
-        return;
+    shapes.forEach(function(shape){
+    shape.drawShape(ctx);
+    });
+
+    robots.forEach(function(robot){
+        robot.findNextMove();
+        robot.shape.drain();
+        robot.shape.drawShape(ctx);
+    });
+
+    player.shape.drain();
+    player.shape.drawShape(ctx);
+    if(playSound){
+        player.updateAudio();
+        player.checkRadar();
     }
-
-shapes.forEach(function(shape){
-    //shape.draw(ctx);
-    shape.regShape(ctx);
-});
-
-robots.forEach(function(robot){
-    robot.findNextMove();
-    robot.drain();
-    //robot.draw(ctx);
-    robot.regShape(ctx);
-});
-
-    player.drain();
-    //player.draw(ctx);
-    player.regShape(ctx);
-    player.updateAudio(player);
     player.drawRadar(ctx);
 
 
-var dist = getDistance(mousex,player.x,mousey,player.y);
+    var dist = getDistance(mousex,player.shape.x,mousey,player.shape.y);
 
-var maxDist= Math.sqrt(Math.pow(canvas.width,2)+Math.pow(canvas.height,2));
+    var maxDist= Math.sqrt(Math.pow(GameWorld.Width,2)+Math.pow(GameWorld.Height,2));
 
-var speedFactor=10*((maxDist-dist)/maxDist+1);
+    var speedFactor=10*((maxDist-dist)/maxDist+1);
 
 
-if(mousex>0 && mousex<canvas.width &&mousey>0 &&mousey<canvas.height){
-    player.x=(mousex-player.x)/speedFactor+player.x;
-    player.y=(mousey-player.y)/speedFactor+player.y;
-}
-updateScore(player.shapesEaten);
-var speed = dist/50;
-
-    //arrowkeys
-    if(rightPressed && x < canvas.width-(size*2)) {
-        player.x += speed;
+    if(mousex>0 && mousex<GameWorld.Width &&mousey>0 &&mousey<GameWorld.Height){
+        player.shape.x=(mousex-player.shape.x)/speedFactor+player.shape.x;
+        player.shape.y=(mousey-player.shape.y)/speedFactor+player.shape.y;
     }
-    else if(leftPressed && x > 0) {
-        player.x -= speed;
-    }
-
-    if(upPressed && y < canvas.height-(size*2)) {
-        player.y += speed;
-    }
-    else if(downPressed && y > 0) {
-        player.y -= speed;
-    }
+    updateScore(player.shapesEaten);
+    updateHighScore(player.shapesEaten);
+    var speed = dist/50;
 
     window.requestAnimationFrame(update);
+   
 }
 
 
-
-function endGame(win){
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function endGame(){
+    //ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.resetTransform();
+    ctx.fillStyle="black";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.font = "30px Arial";
     ctx.textBaseline = 'middle';
+    ctx.textAlign="center"; 
     //ctx.textAlign = 'center';
     ctx.fillStyle="#FFFFFF";
-    if (win){
-        //ctx.fillText("game over",10,50);
-        ctx.fillText("you won",10,50);
-        console.log("win");
-    } else {
-        //ctx.fillText("game over",10,50);
-        ctx.fillText("you lost.",10,50);
-    }
-    shapes.forEach(function(shape){
-        shape.source.stop();
-    });
+    //ctx.fillText("game over",10,50);
+    ctx.fillText("YOU WERE EATEN!",(canvas.width/2),(canvas.height/2-canvas.height/20));
+    ctx.fillText("Your Score = "+player.shapesEaten,(canvas.width/2),(canvas.height/2));
 
+    shapes.forEach(function(shape){
+        if (shape.source!=undefined) {
+            shape.source.stop();
+        }
+    });
+    flee.bufferSource.stop();
+    chase.bufferSource.stop();
+    eat.bufferSource.stop();
 }
 
 function getRandomIntInclusive(min, max) {
   min = Math.ceil(min);
   max = Math.floor(max);
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function dark() {
+    //ctx.resetTransform();
+    ctx.fillStyle="#000000"
+    ctx.fillRect(0, 0, GameWorld.Width, GameWorld.Height);
+    ctx.beginPath();
+    ctx.arc(player.shape.x, player.shape.y, player.radarSize, 0, Math.PI*2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.clearRect(0, 0, GameWorld.Width, GameWorld.Height);
 }
 
 var startTime = (new Date()).getTime();
